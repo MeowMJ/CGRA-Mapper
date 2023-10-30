@@ -34,6 +34,7 @@ int Mapper::getRecMII(DFG* t_dfg) {
   // TODO: RecMII = MAX (delay(c) / distance(c))
   for( list<DFGNode*>* cycle: *cycles) {
     temp_RecMII = float(cycle->size()) / 1.0;
+    cout<<"... every single cycle size: "<<cycle->size()<<" ..."<<endl;
     if(temp_RecMII > RecMII)
       RecMII = temp_RecMII;
   }
