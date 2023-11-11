@@ -313,8 +313,8 @@ void DFG::construct(Function& t_F) {
 
       // Ignore this IR if it is out of the scope.
       if (shouldIgnore(curII)) {
-        errs()<<*curII<<" *** ignored by pass due to that the BB is out "<<
-            "of the scope (target loop)\n";
+        //errs()<<*curII<<" *** ignored by pass due to that the BB is out "<<
+        //    "of the scope (target loop)\n";
         continue;
       }
       errs()<<*curII;
