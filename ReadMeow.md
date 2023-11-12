@@ -5,3 +5,4 @@ For CGRA-Mapper
 3. for heterogeneity -> update to owner already
 4. for recurrence cycle length(DVFS) -> Mapper.cpp
 5. for Python script -> command some lines in DFG.cpp
+6. for heterogeneity -> DFG.cpp
