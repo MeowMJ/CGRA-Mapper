@@ -1075,7 +1075,7 @@ void DFG::showOpcodeDistribution() {
   }
   for (map<string, int>::iterator opcodeItr=opcodeMap.begin();
       opcodeItr!=opcodeMap.end(); ++opcodeItr) {
-    cout << (*opcodeItr).first << " : " << (*opcodeItr).second << "\n";
+    cout << "[show opcode count] " << (*opcodeItr).first << " : " << (*opcodeItr).second << "\n";
   }
   int simdNodeCount = 0;
   for (DFGNode* node: nodes) {
