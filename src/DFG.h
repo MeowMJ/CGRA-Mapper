@@ -60,10 +60,19 @@ class DFG {
     void tuneForBitcast();
     void tuneForLoad();
     void tuneForPattern();
+    void tuneForDualIssueAfter();
+    void tuneForMerge();
+    void ESCORT();
     void combineCmpBranch();
     void combineMulAdd();
     void combinePhiAdd();
     void combine(string, string);
+    void merge(list<DFGNode*>&, const int)
+    void combineForIter(list<string>*);
+    void combineForUnroll(list<string>*);
+    void findExclusivePath(list<DFGNode*>*, const int);
+    void pathMerge(list<DFGNode*>*, const int);
+    void exclusiveMerge(const int, const int);
     void trimForStandalone();
     void detectMemDataDependency();
     void eliminateOpcode(string);

@@ -11,7 +11,7 @@
 #include "DFGNode.h"
 
 DFGNode::DFGNode(int t_id, bool t_precisionAware, Instruction* t_inst,
-                 StringRef t_stringRef) {
+                 StringRef t_stringRef, string t_basicBlockName) {
   m_id = t_id;
   m_precisionAware = t_precisionAware;
   m_inst = t_inst;
@@ -19,10 +19,12 @@ DFGNode::DFGNode(int t_id, bool t_precisionAware, Instruction* t_inst,
   m_predNodes = NULL;
   m_succNodes = NULL;
   m_opcodeName = t_inst->getOpcodeName();
+  m_pathName = t_basicBlockName;
   m_isMapped = false;
   m_numConst = 0;
   m_optType = "";
   m_combined = false;
+  m_merged = false;
   m_isPatternRoot = false;
   m_patternRoot = NULL;
   m_critical = false;
@@ -216,6 +218,33 @@ bool DFGNode::isGetptr() {
   return false;
 }
 
+bool DFGNode::isSel() {
+  if (m_opcodeName.compare("select") == 0)
+    return true;
+  return false;
+}
+
+bool DFGNode::isMAC() {
+  if (m_opcodeName.compare("mulgetelementptr") == 0 or
+      m_opcodeName.compare("muladd") == 0  or
+      m_opcodeName.compare("mulfadd") == 0 or
+      m_opcodeName.compare("mulsub") == 0  or
+      m_opcodeName.compare("mulfsub") == 0  or
+      m_opcodeName.compare("fmulgetelementptr") == 0 or
+      m_opcodeName.compare("fmuladd") == 0  or
+      m_opcodeName.compare("fmulfadd") == 0 or
+      m_opcodeName.compare("fmulsub") == 0  or
+      m_opcodeName.compare("fmulfsub") == 0)
+    return true;
+  return false;
+}
+
+bool DFGNode::isLogic() {
+  if (m_opcodeName.compare("or") == 0 or m_opcodeName.compare("and") == 0)
+    return true;
+  return false;
+}
+
 bool DFGNode::hasCombined() {
   return m_combined;
 }
@@ -224,7 +253,16 @@ void DFGNode::setCombine() {
   m_combined = true;
 }
 
+bool DFGNode::hasMerged() {
+  return m_merged;
+}
+
+void DFGNode::setMerge() {
+  m_merged = true;
+}
+
 void DFGNode::addPatternPartner(DFGNode* t_patternNode) {
+  // setCombine() and setMerge() use the same addPatternPartner
   m_isPatternRoot = true;
   m_patternRoot = this;
   m_patternNodes->push_back(t_patternNode);
@@ -284,6 +322,10 @@ string DFGNode::getOpcodeName() {
   }
 
   return m_opcodeName;
+}
+
+string DFGNode::getPathName(){
+  return m_pathName;
 }
 
 string DFGNode::getFuType() {

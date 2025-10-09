@@ -7,7 +7,7 @@
  * Author : Cheng Tan
  *   Date : Jan 9, 2023
  */
-
+ 
 #include <fstream>
 #include "CGRA.h"
 #include "json.hpp"
@@ -15,7 +15,7 @@
 using json = nlohmann::json;
 
 CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
-	   bool t_heterogeneity, bool t_parameterizableCGRA,
+	   bool t_heterogeneity, bool t_parameterizableCGRA, int t_pathSupportDim,
 	   map<string, list<int>*>* t_additionalFunc) {
   m_rows = t_rows;
   m_columns = t_columns;
@@ -36,7 +36,7 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
       }
     }
 
-    ifstream paramCGRA("./paramCGRA.json");
+    ifstream paramCGRA("./param.json");
     if (!paramCGRA.good()) {
       cout<<"Parameterizable CGRA design/mapping requires paramCGRA.json"<<endl;
       return;
@@ -117,10 +117,10 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
           if (!canEnable) {
             cout<<"\033[0;31mInvalid operation "<<iter->first<<" on CGRA node ID "<<nodeIndex<<"\033[0m"<<endl;
           } else {
-            if ((iter->first).compare("store")) {
+            if ((iter->first).compare("store") == 0) {
               storeCount += 1;
             }
-            if ((iter->first).compare("load")) {
+            if ((iter->first).compare("load") == 0) {
               loadCount += 1;
             }
           }
@@ -144,9 +144,9 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
     // Some other basic operations that can be indicated in the param.json:
     // Enable the specialized 'call' functionality.
     for (int r=0; r<t_rows; ++r) {
-      // for (int c=0; c<t_columns; ++c) {
-        nodes[r][1]->enableCall();
-      // }
+      for (int c=0; c<t_columns; ++c) {
+        nodes[r][c]->enableCall();
+      }
     }
 
     // Enable the vectorization.
@@ -170,14 +170,19 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
     if (t_heterogeneity) {
       for (int r=0; r<t_rows; ++r) {
         for (int c=0; c<t_columns; ++c) {
-          if(r%2==1 and c%2 == 1)
+          if (((r*t_columns)+(c+1)) <= t_pathSupportDim){
+            std::cout<< "[MMJ] "<< t_pathSupportDim << "support fuse and merge." <<std::endl;
             nodes[r][c]->enableComplex();
+            nodes[r][c]->enablePathDim();
+          }
         }
       }
     }
 
     for (int r=0; r<t_rows; ++r) {
-      nodes[r][t_columns-1]->enableReturn();
+      for (int c=0; c<t_columns; ++c) {
+        nodes[r][c]->enableReturn();
+      }
     }
 
     // Connect the CGRA nodes with links.

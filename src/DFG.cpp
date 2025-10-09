@@ -27,16 +27,49 @@ DFG::DFG(Function& t_F, list<Loop*>* t_loops, bool t_targetFunction,
 //  tuneForBitcast();
 //  tuneForLoad();
   if (t_heterogeneity) {
+    //calculateCycles();
+    // *************** testDualIssue *****************
+    // list<string>* targetPattern1 = new list<string>();
+    // targetPattern1->push_back("br");
+    // targetPattern1->push_back("phi");
+    // targetPattern1->push_back("add");
+    // targetPattern1->push_back("icmp");
+    // combineForIter(targetPattern1);
+    // list<string>* targetPattern1 = new list<string>();
+    // targetPattern1->push_back("phi");
+    // targetPattern1->push_back("icmp");
+    // targetPattern1->push_back("or");
+    // targetPattern1->push_back("br");
+    // targetPattern1->push_back("phi");
+    // combineForIter(targetPattern1);
+    // list<string>* targetPattern1 = new list<string>();
+    // targetPattern1->push_back("br");
+    // targetPattern1->push_back("xor");
+    // targetPattern1->push_back("phi");
+    // targetPattern1->push_back("icmp");
+    // targetPattern1->push_back("br");
+    // combineForIter(targetPattern1);
+    // list<string>* targetPattern1 = new list<string>();
+    // targetPattern1->push_back("add");
+    // targetPattern1->push_back("phi");
+    // targetPattern1->push_back("or");
+    // targetPattern1->push_back("br");
+    // combineForUnroll(targetPattern1);
+    // combine("icmp", "br");
+    // combine("getelementptr", "load");
+    // tuneForPattern();
+    // ESCORT();
     calculateCycles();
+    // *************** testDualIssue *****************
 //    combine("phi", "add");
-    combine("and", "xor");
+    // combine("and", "xor");
 //    combine("br", "phi");
 //    combine("add", "icmp");
 //    combine("xor", "add");
-    combineCmpBranch();
-    combine("icmp", "br");
-    combine("getelementptr", "load");
-    tuneForPattern();
+    // combineCmpBranch();
+    // combine("icmp", "br");
+    // combine("getelementptr", "load");
+    // tuneForPattern();
 
 //    calculateCycles();
 ////    combine("icmp", "br");
@@ -100,6 +133,87 @@ void DFG::tuneForPattern() {
   }
 }
 
+
+void DFG::mergeEdgesBetween(DFGNode* t_src, DFGNode* t_dst) {
+    DFGEdge* firstEdge = getDFGEdge(t_src, t_dst);
+    while (hasDFGEdge(t_src, t_dst)) {
+      deleteDFGEdge(t_src, t_dst);
+    }
+    if (firstEdge) {
+        m_DFGEdges.push_back(firstEdge);
+    }
+}
+
+void DFG::tuneForMerge() {
+  // nodes to be merged will have mutiple out edges, unlike nodes to be combined
+  cout<<"[DEBUG] tuneForMerge is running.\n";
+  list<DFGNode*>* removeNodes = new list<DFGNode*>();
+  for (DFGNode* dfgNode: nodes) {
+    if (dfgNode->hasMerged() and !dfgNode->hasCombined()) {
+      if (dfgNode->isPatternRoot()) {
+        cout<<"[DEBUG] dfgNode is " << dfgNode->getID() <<std::endl;
+        for (DFGNode* patternNode: *(dfgNode->getPatternNodes())) {
+          cout<<"[DEBUG] patternNode is " << patternNode->getID() <<std::endl;
+          if (hasDFGEdge(dfgNode, patternNode))
+            m_DFGEdges.remove(getDFGEdge(dfgNode, patternNode));
+
+          for (DFGNode* predNode: *(patternNode->getPredNodes())) {
+            // we only keep one edge between dfgNode and predNode
+            if (predNode == dfgNode or
+                predNode->isOneOfThem(dfgNode->getPatternNodes())) {
+              deleteDFGEdge(predNode, patternNode);
+              continue;
+            }
+            DFGNode* newPredNode = NULL;
+            if (predNode->hasMerged() or predNode->hasCombined())
+              newPredNode = predNode->getPatternRoot();
+            else
+              newPredNode = predNode;
+            replaceDFGEdge(predNode, patternNode, newPredNode, dfgNode);              
+          }
+
+          for (DFGNode* succNode: *(patternNode->getSuccNodes())) {
+            cout<<"[DEBUG] succNode is " << succNode->getID() <<std::endl;
+            if (succNode == dfgNode or
+                succNode->isOneOfThem(dfgNode->getPatternNodes())) {
+              deleteDFGEdge(patternNode, succNode);
+              continue;
+            }
+            DFGNode* newSuccNode = NULL;
+            if (succNode->hasMerged() or succNode->hasCombined())
+              newSuccNode = succNode->getPatternRoot();
+            else
+              newSuccNode = succNode;
+            replaceDFGEdge(patternNode, succNode, dfgNode, newSuccNode);
+          }
+        }
+      } else {
+        removeNodes->push_back(dfgNode);
+      }
+    }
+  }
+  for (DFGNode* dfgNode: *removeNodes) {
+    nodes.remove(dfgNode);
+  }
+
+  // the edges between the dualIssue-combined DFGNodes and its parents/children must be combined into one edge only.
+  for (DFGNode* dfgNode : nodes) {
+      if (dfgNode->hasMerged() and !dfgNode->hasCombined()) {
+          cout << "[DEBUG] dfgNode is " << dfgNode->getID() << std::endl;
+          for (DFGNode* predNode : *(dfgNode->getPredNodes())) {
+              mergeEdgesBetween(predNode, dfgNode);
+          }
+      }
+  }
+}
+
+
+void DFG::ESCORT() {
+  exclusiveMerge(2,100);
+  tuneForMerge();
+  return;
+}
+
 void DFG::combineCmpBranch() {
   // detect patterns (e.g., cmp+branch)
   DFGNode* addNode = NULL;
@@ -139,9 +253,9 @@ void DFG::combineMulAdd() {
   DFGNode* addNode = NULL;
   bool found = false;
   for (DFGNode* dfgNode: nodes) {
-    if (dfgNode->isMul() and dfgNode->isCritical() and !dfgNode->hasCombined()) {
+    if (dfgNode->isMul() and !dfgNode->hasCombined()) {
       for (DFGNode* succNode: *(dfgNode->getSuccNodes())) {
-        if (succNode->isAdd() and succNode->isCritical() and !succNode->hasCombined()) {
+        if (succNode->isAdd() and !succNode->hasCombined()) {
           mulNode = dfgNode;
           mulNode->setCombine();
           addNode = succNode;
@@ -155,6 +269,7 @@ void DFG::combineMulAdd() {
 }
 
 void DFG::combine(string t_opt0, string t_opt1) {
+  // combines two nodes with sequencial relationship
   DFGNode* opt0Node = NULL;
   DFGNode* opt1Node = NULL;
   bool found = false;
@@ -174,6 +289,224 @@ void DFG::combine(string t_opt0, string t_opt1) {
     }
   }
 }
+
+void DFG::merge(list<DFGNode*>& t_nodesToMerge, const int t_mergeSize) {
+  // merges two or more nodes (< t_mergeSize) with exclusive relationship
+    if (t_nodesToMerge.size() < 2) {
+        cout << "Finish merging DFG node\n";
+        return;
+    }
+    int mergeCount = 0;
+    DFGNode* headNode = t_nodesToMerge.front();
+    for (DFGNode* node : t_nodesToMerge) {
+        if (node != headNode && !node->hasMerged() && !node->hasCombined()) {
+            headNode->addPatternPartner(node);
+        }
+        node->setMerge();
+        cout<<"merge node: "<<node->getID()<<"\n";
+        mergeCount++;
+        if (mergeCount == t_mergeSize) {
+            cout << "number of merged DFG nodes attains mergeSize" << t_mergeSize << "\n";
+            break;
+        }
+    }
+    return;
+}
+
+// Combines patterns provided by users which should be a cycle, otherwise, the fusion won't be performed.
+void DFG::combineForIter(list<string>* t_targetPattern){  
+  cout << "[DEBUG] combineForIter is running" << endl;
+  int patternSize = t_targetPattern->size();
+  string headOpt = string(t_targetPattern->front());
+  list<string>::iterator currentFunc = t_targetPattern->begin();
+  currentFunc++;
+  // toBeMatchedDFGNodes is to store the DFG nodes that match the pattern
+  list<DFGNode*>* toBeMatchedDFGNodes = new list<DFGNode*>[patternSize];
+  for (DFGNode* dfgNode: nodes) {
+    if (dfgNode->isOpt(headOpt) and !dfgNode->hasCombined()) {
+      toBeMatchedDFGNodes->push_back(dfgNode);
+      cout << "[DEBUG] toBeMatchedDFGNodes is " << dfgNode->getID() << endl;
+      // the for loop below is to find the target pattern under specific dfgNode
+      for (int i = 1; i < patternSize; i++, currentFunc++){
+        string t_opt = *currentFunc;
+        DFGNode* tailNode = toBeMatchedDFGNodes->back();
+        for (DFGNode* succNode: *(tailNode->getSuccNodes())) {
+          if (succNode->isOpt(t_opt) and !succNode->hasCombined()) {
+            // Indicate the pattern is finally found and matched
+            if (i == (patternSize-1) and dfgNode->isSuccessorOf(succNode)){
+              toBeMatchedDFGNodes->push_back(succNode);
+              for(DFGNode* optNode: *toBeMatchedDFGNodes){
+                if(optNode != dfgNode){
+                   dfgNode ->addPatternPartner(optNode);                  
+                }
+                optNode->setCombine();                       
+              }
+              break;
+            } else if(i == (patternSize-1) and !dfgNode->isSuccessorOf(succNode)){
+              continue;
+            } else{
+              toBeMatchedDFGNodes->push_back(succNode);
+              break;
+            }
+          }
+        }        
+      }
+      toBeMatchedDFGNodes->clear();
+      currentFunc = t_targetPattern->begin();
+      currentFunc++;
+    }  
+  }
+}
+
+// combineForUnroll is used to reconstruct "phi-add-add-..." alike patterns with a limited length.
+void DFG::combineForUnroll(list<string>* t_targetPattern){
+  int patternSize = t_targetPattern->size();
+  if (patternSize > 4){ 
+    cout<<"[ERROR] we currently only support pattern with length less than 5.\n";
+    // the longest length can be combined is 4
+    return;
+  }
+  string headOpt = string(t_targetPattern->front());
+  list<string>::iterator currentFunc = t_targetPattern->begin();
+  currentFunc++;
+  // toBeMatchedDFGNodes is to store the DFG nodes that match the pattern
+  list<DFGNode*>* toBeMatchedDFGNodes = new list<DFGNode*>[patternSize];
+  for (DFGNode* dfgNode: nodes) {
+    if (dfgNode->isOpt(headOpt) and !dfgNode->hasCombined() and dfgNode->getID() != 1) {
+      toBeMatchedDFGNodes->push_back(dfgNode);
+      // the for loop below is to find the target pattern under specific dfgNode
+      for (int i = 1; i < patternSize; i++, currentFunc++){
+        string t_opt = *currentFunc;
+        DFGNode* tailNode = toBeMatchedDFGNodes->back();
+        for (DFGNode* succNode: *(tailNode->getSuccNodes())) {
+          if (succNode->isOpt(t_opt) and !succNode->hasCombined()) {
+            if (i == (patternSize-1)){
+              toBeMatchedDFGNodes->push_back(succNode);
+              for(DFGNode* optNode: *toBeMatchedDFGNodes){
+                if(optNode != dfgNode){
+                   dfgNode ->addPatternPartner(optNode);                  
+                }
+                optNode->setCombine();                       
+              }
+              break;
+            } else{
+              toBeMatchedDFGNodes->push_back(succNode);
+              break;
+            }
+          }
+        }        
+      }
+      toBeMatchedDFGNodes->clear();
+      currentFunc = t_targetPattern->begin();
+      currentFunc++;
+    }  
+  }
+}
+
+
+void DFG::findExclusivePath(list<DFGNode*>* t_succList, const int t_mergeSize) {
+// findExclusivePath finds succeed nodes after br or switch with different path
+  map<string, list<DFGNode*>> pathNameMap;
+  for (DFGNode* dfgNode: *t_succList){
+    cout <<"[DEBUG] t_succList dfgNode "<< dfgNode->getID() <<"\n";
+    if (!dfgNode->hasMerged() and !dfgNode->hasCombined()){
+      pathNameMap[dfgNode->getPathName()].push_back(dfgNode);
+    }
+  }
+
+  // sort every path by name to make similar names adjacent
+  for (auto& pair: pathNameMap) {
+    pair.second.sort([](DFGNode* a, DFGNode* b) {
+        return a->getOpcodeName() < b->getOpcodeName(); 
+    });
+  }
+
+  list<DFGNode*> diffPathNode;
+  while(true){
+    for (auto& pair: pathNameMap) {
+      if (pair.second.empty()){
+        // if there is no node in this path, pass
+        continue;
+      }
+      diffPathNode.push_back(pair.second.front());
+      pair.second.pop_front();
+    }
+    if (diffPathNode.empty()){
+      cout <<"findIFELPath is finished \n";
+      return;
+    }
+    pathMerge(&diffPathNode, t_mergeSize);
+    diffPathNode.clear();
+  } 
+}
+
+void DFG::pathMerge(list<DFGNode*>* t_diffPathNode, const int t_mergeSize){
+  cout <<"[DEBUG] pathMerge is running\n";
+  // find whole path according to t_diffPathNode by BFS
+  vector<list<DFGNode*>> allPaths;
+  list<DFGNode*> visitedNodes;
+  for(DFGNode* headNode: *t_diffPathNode){
+    list<DFGNode*> queueNodes;
+    list<DFGNode*> pathNodes;
+    if(find(visitedNodes.begin(), visitedNodes.end(), headNode) != visitedNodes.end()){
+      queueNodes.push_back(headNode);
+      visitedNodes.push_back(headNode);
+      while(!queueNodes.empty()){
+        DFGNode* currentNode = queueNodes.pop_front();
+        // add currentNode to current path
+        pathNodes.push_back(currentNode);
+        for(DFGNode* succNode: currentNode->getSuccNodes()){
+          if(find(visitedNodes.begin(), visitedNodes.end(), succNode) != visitedNodes.end()){
+            queueNodes.push_back(succNode);
+            visitedNodes.push_back(succNode);
+          }          
+        }
+      }
+      allPaths.push_back(pathNodes);
+      queueNodes.clear();
+      pathNodes.clear();
+    }
+  }
+
+  // merge exclusive paths
+  size_t maxPathLength = 0;
+  for (const auto& path : allPaths) {
+      if (path.size() > maxPathLength) {
+          // gain the max length of all paths
+          maxPathLength = path.size();
+      }
+  }
+
+  for (size_t i = 0; i < maxPathLength; ++i) {
+      list<DFGNode*> nodesToMerge;
+      for (auto& path : allPaths) {
+          auto it = path.begin();
+          // make sure choose index of path within legal extent
+          advance(it, min(i, path.size() - 1));
+          nodesToMerge.push_back(*it);
+      }
+      merge(&nodesToMerge, t_mergeSize);
+      nodesToMerge.clear();
+  }
+}
+
+void DFG::exclusiveMerge(const int t_mergeSize, const int t_mergeCount){
+  // identify 'br' and 'switch' with multiple output paths, and merge those paths
+  // Note that exclusiveMerge must be done after other combine operation
+
+  // cout <<"[DEBUG] dualIssueNew is running.\n";
+  int countPartialMerge = 1;
+  for (DFGNode* dfgNode: nodes) {
+    if (countPartialMerge > t_mergeCount){
+      return;
+    }
+    if ((dfgNode->isBranch() or dfgNode->isOpt("switch")) and !dfgNode->hasMerged()) {
+      findExclusivePath(dfgNode->getSuccNodes(), t_mergeSize);
+      countPartialMerge++;
+    }
+  }
+}
+
 
 bool DFG::shouldIgnore(Instruction* t_inst) {
   if (m_targetFunction) {
@@ -306,6 +639,8 @@ void DFG::construct(Function& t_F) {
       errs()<<"   ****** succ bb: "<<*sucBB->begin()<<"\n";
     }
 
+    string curBBName = curBB->getName().str();
+
      // Construct DFG nodes.
     for (BasicBlock::iterator II=curBB->begin(),
         IEnd=curBB->end(); II!=IEnd; ++II) {
@@ -322,7 +657,7 @@ void DFG::construct(Function& t_F) {
       if (hasNode(curII)) {
         dfgNode = getNode(curII);
       } else {
-        dfgNode = new DFGNode(nodeID++, m_precisionAware, curII, getValueName(curII));
+        dfgNode = new DFGNode(nodeID++, m_precisionAware, curII, getValueName(curII), curBBName);
         nodes.push_back(dfgNode);
       }
       cout<<" (ID: "<<dfgNode->getID()<<")\n";
@@ -331,9 +666,12 @@ void DFG::construct(Function& t_F) {
 
     if (shouldIgnore(terminator))
       continue;
+
 //    DFGNode* dfgNodeTerm = new DFGNode(nodeID++, terminator, getValueName(terminator));
     for (BasicBlock* sucBB : successors(curBB)) {
       // TODO: get the live-in nodes rather than front() and connect them
+      string sucBBName = sucBB->getName().str();
+      errs()<<"[DEBUG] "<<sucBB->getName()<<"\n";
       for (BasicBlock::iterator II=sucBB->begin(),
           IEnd=sucBB->end(); II!=IEnd; ++II) {
         Instruction* inst = &*II;
@@ -349,7 +687,7 @@ void DFG::construct(Function& t_F) {
           if (hasNode(inst)) {
             dfgNode = getNode(inst);
           } else {
-            dfgNode = new DFGNode(nodeID++, m_precisionAware, inst, getValueName(inst));
+            dfgNode = new DFGNode(nodeID++, m_precisionAware, inst, getValueName(inst), sucBBName);
             nodes.push_back(dfgNode);
           }
     //      Instruction* first = &*(sucBB->begin());
@@ -1154,11 +1492,18 @@ void DFG::replaceDFGEdge(DFGNode* t_old_src, DFGNode* t_old_dst,
       break;
     }
   }
-  if (target == NULL)
-    assert("ERROR cannot find the corresponding DFG edge.");
+  if (target == NULL) {
+    // assert("ERROR cannot find the corresponding DFG edge.");
+    cout << "ERROR cannot find the corresponding DFG edge\n";
+    return;
+  }
   m_DFGEdges.remove(target);
-  DFGEdge* newEdge = new DFGEdge(target->getID(), t_new_src, t_new_dst);
+  // Keeps the ctrl property of the original edge on the newly added edge.
+  DFGEdge* newEdge = new DFGEdge(target->getID(), t_new_src, t_new_dst, target->isCtrlEdge());
   m_DFGEdges.push_back(newEdge);
+  if (newEdge->isCtrlEdge()){
+    m_ctrlEdges.push_back(newEdge);
+  }
 }
 
 void DFG::deleteDFGEdge(DFGNode* t_src, DFGNode* t_dst) {
@@ -1295,7 +1640,7 @@ void DFG::tuneForBranch() {
       processedDFGBrNodes.push_back(left);
     } else {
       DFGNode* newDFGBrNode = new DFGNode(nodes.size(), m_precisionAware, left->getInst(),
-          getValueName(left->getInst()));
+          getValueName(left->getInst()), left->getPathName());  // FIXME
       for (DFGNode* predDFGNode: *(left->getPredNodes())) {
         DFGEdge* newDFGBrEdge = new DFGEdge(newDFGEdgeID++,
             predDFGNode, newDFGBrNode);

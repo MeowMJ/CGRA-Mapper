@@ -27,11 +27,10 @@ CGRANode::CGRANode(int t_id, int t_x, int t_y) {
   m_id = t_id;
   m_currentCtrlMemItems = 0;
   m_disabled = false;
-  m_canReturn = false;
   m_canStore = false;
   m_canLoad = false;
-  m_canCall = false;
   m_supportComplex = false;
+  m_supportPathDim = false;
   m_x = t_x;
   m_y = t_y;
   m_neighbors = NULL;
@@ -44,15 +43,17 @@ CGRANode::CGRANode(int t_id, int t_x, int t_y) {
   m_regs_timing = NULL;
 
   // used for parameterizable CGRA functional units
-  m_canAdd   = true;
-  m_canMul   = true;
-  m_canShift = true;
-  m_canPhi   = true;
-  m_canSel   = true;
-  m_canCmp   = true;
-  m_canMAC   = true;
-  m_canLogic = true;
-  m_canBr    = true;
+  m_canCall   = true;
+  m_canAdd    = true;
+  m_canMul    = true;
+  m_canShift  = true;
+  m_canPhi    = true;
+  m_canSel    = true;
+  m_canCmp    = true;
+  m_canMAC    = true;
+  m_canLogic  = true;
+  m_canBr     = true;
+  m_canReturn = true;
 }
 
 // FIXME: should handle the case that the data is maintained in the registers
@@ -190,7 +191,16 @@ bool CGRANode::canSupport(DFGNode* t_opt) {
       (t_opt->isReturn()     and !canReturn()) or
       (t_opt->isCall()       and !canCall())  or
       (t_opt->isVectorized() and !supportVectorization()) or
-      (t_opt->hasCombined()  and !supportComplex() )){
+      (t_opt->hasCombined()  and !supportComplex()) or
+      (t_opt->hasMerged()    and !supportPathDim()) or
+      (t_opt->isAdd()        and !canAdd()) or 
+      (t_opt->isMul()        and !canMul()) or 
+      (t_opt->isPhi()        and !canPhi()) or 
+      (t_opt->isSel()        and !canSel()) or 
+      (t_opt->isMAC()        and !canMAC()) or 
+      (t_opt->isLogic()      and !canLogic()) or 
+      (t_opt->isBranch()     and !canBr()) or 
+      (t_opt->isCmp()        and !canCmp()) ){ 
     return false;
   }
   return true;
@@ -399,15 +409,15 @@ int CGRANode::getCurrentCtrlMemItems() {
 
 // TODO: will support precision-based operations (e.g., fadd, fmul, etc).
 bool CGRANode::enableFunctionality(string t_func) {
-  if (t_func.compare("store")) {
+  if (t_func.compare("store") == 0) {
     enableStore();
-  } else if (t_func.compare("load")) {
+  } else if (t_func.compare("load") == 0) {
     enableLoad();
-  } else if (t_func.compare("return")) {
+  } else if (t_func.compare("return") == 0) {
     enableReturn();
-  } else if (t_func.compare("call")) {
+  } else if (t_func.compare("call") == 0) {
     enableCall();
-  } else if (t_func.compare("complex")) {
+  } else if (t_func.compare("complex") == 0) {
     enableComplex();
   } else {
     return false;
@@ -433,6 +443,10 @@ void CGRANode::enableCall() {
 
 void CGRANode::enableComplex() {
   m_supportComplex = true;
+}
+
+void CGRANode::enablePathDim() {
+  m_supportPathDim = true;
 }
 
 void CGRANode::enableVectorization() {
@@ -478,6 +492,10 @@ void CGRANode::enableBr() {
 
 bool CGRANode::supportComplex() {
   return m_supportComplex;
+}
+
+bool CGRANode::supportPathDim() {
+  return m_supportPathDim;
 }
 
 bool CGRANode::supportVectorization() {
@@ -569,5 +587,10 @@ void CGRANode::disableAllFUs() {
   m_canLogic = false;
   m_canBr = false;
   m_supportComplex = false;
+  m_supportPathDim = false;
   m_supportVectorization = false;
+}
+
+bool CGRANode::isDisabled() {
+    return m_disabled;
 }

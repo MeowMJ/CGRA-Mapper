@@ -15,6 +15,7 @@
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/IR/BasicBlock.h>
 
 #include <string>
 #include <list>
@@ -38,6 +39,8 @@ class DFGNode {
     Value* m_value;
     StringRef m_stringRef;
     string m_opcodeName;
+    // m_pathName is the derived from basic block of llvm
+    string m_pathName;  
     list<DFGEdge*> m_inEdges;
     list<DFGEdge*> m_outEdges;
     list<DFGNode*>* m_succNodes;
@@ -49,6 +52,7 @@ class DFGNode {
     string m_optType;
     string m_fuType;
     bool m_combined;
+    bool m_merged;
     bool m_isPatternRoot;
     bool m_critical;
     int m_level;
@@ -63,7 +67,7 @@ class DFGNode {
     void setPatternRoot(DFGNode*);
 
   public:
-    DFGNode(int, bool, Instruction*, StringRef);
+    DFGNode(int, bool, Instruction*, StringRef, string);
     int getID();
     void setID(int);
     void setLevel(int);
@@ -82,14 +86,20 @@ class DFGNode {
     bool isCmp();
     bool isBitcast();
     bool isGetptr();
+    bool isSel();
+    bool isMAC();
+    bool isLogic();
     bool isOpt(string);
     bool isVectorized();
     bool hasCombined();
     void setCombine();
+    bool hasMerged();
+    void setMerge();
     void addPatternPartner(DFGNode*);
     Instruction* getInst();
     StringRef getStringRef();
     string getOpcodeName();
+    string getPathName();
     list<DFGNode*>* getPredNodes();
     list<DFGNode*>* getSuccNodes();
     bool isSuccessorOf(DFGNode*);
