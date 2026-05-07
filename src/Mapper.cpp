@@ -157,6 +157,10 @@ map<CGRANode*, int>* Mapper::dijkstra_search(CGRA* t_cgra, DFG* t_dfg,
       !t_dstCGRANode->canOccupy(t_targetDFGNode,
       timing[t_dstCGRANode], t_II)) {
 //    path.clear();
+
+        cout << "[MMJ DEBUG]: !t_dstCGRANode->canOccupy(t_targetDFGNode, timing[t_dstCGRANode], t_II)" << endl;
+
+
     delete path;
     return NULL;
   }
@@ -367,7 +371,7 @@ map<CGRANode*, int>* Mapper::calculateCost(CGRA* t_cgra, DFG* t_dfg,
   bool isAnyPredDFGNodeMapped = false;
 
   for(DFGNode* pre: *predNodes) {
-//      cout<<"[DEBUG] how dare to pre node: "<<pre->getID()<<"; CGRA node: "<<t_fu->getID()<<endl;
+      cout<<"[MMJ DEBUG] how dare to pre node: "<<pre->getID()<<"; CGRA node: "<<t_fu->getID()<<endl;
     if(m_mapping.find(pre) != m_mapping.end()) {
       // Leverage Dijkstra algorithm to search the shortest path between
       // the mapped 'CGRANode' of the 'pre' and the target 'fu'.
@@ -375,9 +379,12 @@ map<CGRANode*, int>* Mapper::calculateCost(CGRA* t_cgra, DFG* t_dfg,
       if (t_fu->canSupport(t_dfgNode))
         tempPath = dijkstra_search(t_cgra, t_dfg, t_II, pre,
             t_dfgNode, t_fu);
-      if (tempPath == NULL)
+      if (tempPath == NULL) {
+        cout<<"Leverage Dijkstra algorithm to search the shortest path "<<endl;
         return NULL;
+      }
       else if ((*tempPath)[t_fu] >= m_maxMappingCycle) {
+        cout<<"(*tempPath)[t_fu] >= m_maxMappingCycle "<<endl;
         delete tempPath;
         return NULL;
       }
@@ -400,7 +407,7 @@ map<CGRANode*, int>* Mapper::calculateCost(CGRA* t_cgra, DFG* t_dfg,
       if (t_fu->canOccupy(t_dfgNode, cycle, t_II)) {
         path = new map<CGRANode*, int>();
         (*path)[t_fu] = cycle;
-        //cout<<"DEBUG how dare to map DFG node: "<<t_dfgNode->getID()<<"; CGRA node: "<<t_fu->getID()<<" at cycle "<< cycle<<endl;
+        cout<<"[MMJ DEBUG] how dare to map DFG node: "<<t_dfgNode->getID()<<"; CGRA node: "<<t_fu->getID()<<" at cycle "<< cycle<<endl;
         return path;
       }
       ++cycle;

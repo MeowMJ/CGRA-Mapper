@@ -1,0 +1,27 @@
+{
+  "kernel"                : "kernel_2op",
+  "targetFunction"        : false,
+  "targetNested"          : false,
+  "targetLoopsID"         : [0],
+  "doCGRAMapping"         : true,
+  "row"                   : 1,
+  "column"                : 1,
+  "precisionAware"        : false,
+  "fusionStrategy"        : [],
+  "isTrimmedDemo"         : true,
+  "heuristicMapping"      : true,
+  "parameterizableCGRA"   : false,
+  "vectorizationMode"     : "all",
+  "bypassConstraint"      : 4,
+  "isStaticElasticCGRA"   : false,
+  "ctrlMemConstraint"     : 10,
+  "regConstraint"         : 8,
+  "supportDVFS"           : false,
+  "opcodeOffset"          : 0,
+  "DVFSIslandDim"         : 1,
+  "DVFSAwareMapping"      : false,
+  "enablePowerGating"     : false,
+  "fusionPattern"         : {
+                              "4" : ["phi", "add", "icmp", "br"]
+                            }
+}

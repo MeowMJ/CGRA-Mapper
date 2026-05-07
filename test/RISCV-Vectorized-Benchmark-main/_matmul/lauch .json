@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "RISC-V Run",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.elf",  // 编译后的 elf 文件路径
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,  //  false 表示在 VS Code 内置终端输出
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            // 使用 RISC-V 版本的 gdb 和 qemu 进行调试/运行
+            "miDebuggerPath": "/home/mmj/chipyard/.conda-env/riscv-tools/bin/riscv64-unknown-elf-objdump",  // 替换为实际路径
+            "preLaunchTask": "riscv-build",  // 关联编译任务（需配合 tasks.json）
+            "setupCommands": [
+                {
+                    "text": "target remote | qemu-riscv64 -g 1234 ${workspaceFolder}/main.elf"
+                }
+            ]
+        }
+    ]
+}

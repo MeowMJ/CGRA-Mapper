@@ -1,0 +1,101 @@
+[
+  {
+    "fu"         : "Alu",
+    "id"         : 7,
+    "org_opt"    : "add",
+    "JSON_opt"   : "OPT_ADD_CONST",
+    "in_const"   : [],
+    "pre"         : [0],
+    "succ"       : [[0,8,9]]
+  },
+  {
+    "fu"         : "Phi",
+    "id"         : 0,
+    "org_opt"    : "phi",
+    "JSON_opt"   : "OPT_PHI_CONST",
+    "in_const"   : [],
+    "pre"         : [7,10],
+    "succ"       : [[1,2,3,4,5,6,7,8]]
+  },
+  {
+    "fu"         : "Comp",
+    "id"         : 9,
+    "org_opt"    : "cmp",
+    "JSON_opt"   : "OPT_EQ_CONST",
+    "in_const"   : [],
+    "pre"         : [7],
+    "succ"       : [[10]]
+  },
+  {
+    "fu"         : "Branch",
+    "id"         : 10,
+    "org_opt"    : "br",
+    "JSON_opt"   : "OPT_BRH",
+    "in_const"   : [],
+    "pre"         : [9],
+    "succ"       : [[0]]
+  },
+  {
+    "fu"         : "Unknown FU for force_contribution",
+    "id"         : 1,
+    "org_opt"    : "force_contribution",
+    "JSON_opt"   : "Unfamiliar Op: force_contribution",
+    "in_const"   : [],
+    "pre"         : [0],
+    "succ"       : [[]]
+  },
+  {
+    "fu"         : "Unknown FU for force_contribution",
+    "id"         : 2,
+    "org_opt"    : "force_contribution",
+    "JSON_opt"   : "Unfamiliar Op: force_contribution",
+    "in_const"   : [],
+    "pre"         : [0],
+    "succ"       : [[]]
+  },
+  {
+    "fu"         : "Unknown FU for force_contribution",
+    "id"         : 3,
+    "org_opt"    : "force_contribution",
+    "JSON_opt"   : "Unfamiliar Op: force_contribution",
+    "in_const"   : [],
+    "pre"         : [0],
+    "succ"       : [[]]
+  },
+  {
+    "fu"         : "Unknown FU for force_contribution",
+    "id"         : 4,
+    "org_opt"    : "force_contribution",
+    "JSON_opt"   : "Unfamiliar Op: force_contribution",
+    "in_const"   : [],
+    "pre"         : [0],
+    "succ"       : [[]]
+  },
+  {
+    "fu"         : "Alu",
+    "id"         : 5,
+    "org_opt"    : "add",
+    "JSON_opt"   : "OPT_ADD_CONST",
+    "in_const"   : [],
+    "pre"         : [0],
+    "succ"       : [[6]]
+  },
+  {
+    "fu"         : "Unknown FU for force_contribution",
+    "id"         : 8,
+    "org_opt"    : "force_contribution",
+    "JSON_opt"   : "Unfamiliar Op: force_contribution",
+    "in_const"   : [],
+    "pre"         : [0,7],
+    "succ"       : [[]]
+  },
+  {
+    "fu"         : "Unknown FU for force_contribution",
+    "id"         : 6,
+    "org_opt"    : "force_contribution",
+    "JSON_opt"   : "Unfamiliar Op: force_contribution",
+    "in_const"   : [],
+    "pre"         : [0,5],
+    "succ"       : [[]]
+  }
+]
