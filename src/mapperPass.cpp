@@ -19,6 +19,10 @@
 #include "json.hpp"
 #include "Mapper.h"
 
+// Used to walkaround the mis-interpret of LLVM opcode in github
+// testing infra: https://github.com/tancheng/CGRA-Mapper/pull/27#issuecomment-2495202802
+extern int testing_opcode_offset;
+
 using namespace llvm;
 using namespace std;
 using json = nlohmann::json;
@@ -55,15 +59,31 @@ namespace {
       int bypassConstraint          = 4;
       int regConstraint             = 8;
       bool precisionAware           = false;
-      bool diagonalVectorization    = false;
-      bool heterogeneity            = false;
-      int  PathSupportDim           = 16;
+      std::string vectorizationMode = "all";
       bool heuristicMapping         = true;
-      bool parameterizableCGRA      = false; 
+      bool parameterizableCGRA      = false;
+
+      // Incremental mapping related:
+      // https://github.com/tancheng/CGRA-Mapper/pull/24
       bool incrementalMapping       = false;
+
+      // DVFS-related options.
+      bool supportDVFS              = false;
+      bool DVFSAwareMapping         = false;
+      int DVFSIslandDim             = 2;
+      bool enablePowerGating        = false;
+      bool enableExpandableMapping  = false;
+
+      // Option used to split one integer division into 4.
+      // https://github.com/tancheng/CGRA-Mapper/pull/27#issuecomment-2480362586
+      int vectorFactorForIdiv               = 1;
+      string multiCycleStrategy             = "exclusive";
+
       map<string, int>* execLatency = new map<string, int>();
       list<string>* pipelinedOpt    = new list<string>();
+      list<string>* fusionStrategy  = new list<string>();
       map<string, list<int>*>* additionalFunc = new map<string, list<int>*>();
+      map<string, list<string>*>* fusionPattern = new map<string, list<string>*>();
 
       // Set the target function and loop.
       map<string, list<int>*>* functionWithLoop = new map<string, list<int>*>();
@@ -80,7 +100,7 @@ namespace {
       } else {
         json param;
         i >> param;
- 
+
 	// Check param exist or not.
 	set<string> paramKeys;
 	paramKeys.insert("row");
@@ -96,8 +116,8 @@ namespace {
 	paramKeys.insert("bypassConstraint");
 	paramKeys.insert("regConstraint");
 	paramKeys.insert("precisionAware");
-	paramKeys.insert("diagonalVectorization");
-	paramKeys.insert("heterogeneity");
+	paramKeys.insert("vectorizationMode");
+	paramKeys.insert("fusionStrategy");
 	paramKeys.insert("heuristicMapping");
 	paramKeys.insert("parameterizableCGRA");
         paramKeys.insert("incrementalMapping");
@@ -113,7 +133,7 @@ namespace {
         catch (json::out_of_range& e)
         {
           cout<<"Please include related parameter in param.json: "<<e.what()<<endl;
-	  exit(0);
+	        exit(0);
         }
 
         (*functionWithLoop)[param["kernel"]] = new list<int>();
@@ -135,12 +155,46 @@ namespace {
         bypassConstraint      = param["bypassConstraint"];
         regConstraint         = param["regConstraint"];
         precisionAware        = param["precisionAware"];
-        diagonalVectorization = param["diagonalVectorization"];
-        heterogeneity         = param["heterogeneity"];
-        PathSupportDim        = param["PathSupportDim"];
+        vectorizationMode     = param["vectorizationMode"];
         heuristicMapping      = param["heuristicMapping"];
         parameterizableCGRA   = param["parameterizableCGRA"];
-        incrementalMapping    = param["incrementalMapping"];
+
+        if (param.find("incrementalMapping") != param.end()) {
+          incrementalMapping = param["incrementalMapping"];
+        }
+        if (param.find("supportDVFS") != param.end()) {
+          supportDVFS = param["supportDVFS"];
+        }
+        if (param.find("DVFSAwareMapping") != param.end()) {
+          DVFSAwareMapping = param["DVFSAwareMapping"];
+        }
+        if (param.find("DVFSIslandDim") != param.end()) {
+          DVFSIslandDim = param["DVFSIslandDim"];
+        }
+        if (param.find("enablePowerGating") != param.end()) {
+          enablePowerGating = param["enablePowerGating"];
+        }
+        if (param.find("expandableMapping") != param.end()) {
+          enableExpandableMapping = param["expandableMapping"];
+        }
+
+        if (param.find("vectorFactorForIdiv ") != param.end()) {
+          vectorFactorForIdiv = param["vectorFactorForIdiv "];
+        }
+        if (param.find("testingOpcodeOffset") != param.end()) {
+          testing_opcode_offset = param["testingOpcodeOffset"];
+        }
+        if (param.find("multiCycleStrategy") != param.end()) {
+          multiCycleStrategy = param["multiCycleStrategy"];
+          // Strategy Definition
+          // Exclusive: Multi-cyce operations occupy tiles exclusively. Other operations can be mapped onto this tile only if the multi-cycle operation finishs its computation.
+          // Distributed: Multi-cycle operations are splitted into multiple single-cycle operations and each of which can be mapped onto a tile.
+          // Inclusive: Multi-cycle operations' execution can overlap with other operations on the same tile.
+          // Note that
+          assert(multiCycleStrategy.compare("exclusive") == 0 or
+                 multiCycleStrategy.compare("distributed") == 0 or
+                 multiCycleStrategy.compare("inclusive") == 0);
+	}
         cout<<"Initialize opt latency for DFG nodes: "<<endl;
         for (auto& opt : param["optLatency"].items()) {
           cout<<opt.key()<<" : "<<opt.value()<<endl;
@@ -150,12 +204,26 @@ namespace {
         for (int i=0; i<pipeOpt.size(); ++i) {
           pipelinedOpt->push_back(pipeOpt[i]);
         }
+        cout<<"Deciding fusion strategy for DFG nodes: "<<endl;
+        for (auto& opt : param["fusionStrategy"].items()) {
+          fusionStrategy->push_back(opt.value());
+        }
         cout<<"Initialize additional functionality on CGRA nodes: "<<endl;
         for (auto& opt : param["additionalFunc"].items()) {
           (*additionalFunc)[opt.key()] = new list<int>();
           cout<<opt.key()<<" : "<<opt.value()<<": ";
           for (int i=0; i<opt.value().size(); ++i) {
             (*additionalFunc)[opt.key()]->push_back(opt.value()[i]);
+            cout<<opt.value()[i]<<" ";
+          }
+          cout<<endl;
+        }
+        cout<<"Finding fusion pattern for DFG: "<<endl;
+        for (auto& opt : param["fusionPattern"].items()) {
+          (*fusionPattern)[opt.key()] = new list<string>();
+          cout<<opt.key()<<" : "<<opt.value()<<": ";
+          for (int i=0; i<opt.value().size(); ++i) {
+            (*fusionPattern)[opt.key()]->push_back(opt.value()[i]);
             cout<<opt.value()[i]<<" ";
           }
           cout<<endl;
@@ -169,18 +237,25 @@ namespace {
       }
       cout << "==================================\n";
       cout<<"[function \'"<<t_F.getName().str()<<"\' is one of our targets]\n";
+      const bool enableDistributed = multiCycleStrategy.compare("distributed") == 0;
+      const bool enableMultipleOps = multiCycleStrategy.compare("inclusive") == 0;
 
       list<Loop*>* targetLoops = getTargetLoops(t_F, functionWithLoop, targetNested);
       // TODO: will make a list of patterns/tiles to illustrate how the
       //       heterogeneity is
       DFG* dfg = new DFG(t_F, targetLoops, targetEntireFunction, precisionAware,
-                         heterogeneity, execLatency, pipelinedOpt);
-      CGRA* cgra = new CGRA(rows, columns, diagonalVectorization, heterogeneity,
-		            parameterizableCGRA, PathSupportDim, additionalFunc);
+                         fusionStrategy, execLatency, pipelinedOpt, fusionPattern, supportDVFS,
+			 DVFSAwareMapping, vectorFactorForIdiv, enableDistributed);
+      if (enableExpandableMapping) {
+        dfg->reorderInCriticalFirst();
+      }
+      CGRA* cgra = new CGRA(rows, columns, vectorizationMode, fusionStrategy,
+		            parameterizableCGRA, additionalFunc, supportDVFS,
+			    DVFSIslandDim, enableMultipleOps);
       cgra->setRegConstraint(regConstraint);
       cgra->setCtrlMemConstraint(ctrlMemConstraint);
       cgra->setBypassConstraint(bypassConstraint);
-      mapper = new Mapper();
+      mapper = new Mapper(DVFSAwareMapping);
 
       // Show the count of different opcodes (IRs).
       cout << "==================================\n";
@@ -205,13 +280,24 @@ namespace {
       cout << "==================================\n";
       cout << "[RecMII: " << RecMII << "]\n";
       int II = ResMII;
-      if(II < RecMII)
+      if (II < RecMII)
         II = RecMII;
+
+      if (supportDVFS) {
+        dfg->initDVFSLatencyMultiple(II, DVFSIslandDim, cgra->getFUCount());
+      }
 
       if (!doCGRAMapping) {
         cout << "==================================\n";
         return false;
       }
+      if (!canMap(cgra, dfg)) {
+        cout << "==================================\n";
+        cout << "[Mapping Fail]\n";
+        return false;
+      }
+
+
       // Heuristic algorithm (hill climbing) to get a valid mapping within
       // a acceptable II.
       bool success = false;
@@ -253,15 +339,24 @@ namespace {
         cout << "[fail]\n";
       else {
         mapper->showSchedule(cgra, dfg, II, isStaticElasticCGRA, parameterizableCGRA);
-        cout << "==================================\n";
+        // cout << "==================================\n";
+        // cout << "[show opcode count]\n";
+        // dfg->showOpcodeDistribution();
         cout << "[Mapping Success]\n";
         cout << "==================================\n";
+        if (enableExpandableMapping) {
+          cout << "[ExpandableII: " << mapper->getExpandableII(dfg, II) << "]\n";
+          cout << "==================================\n";
+        }
+        cout << "[Utilization & DVFS stats]\n";
+        mapper->showUtilization(cgra, dfg, II, isStaticElasticCGRA, enablePowerGating);
+        cout << "==================================\n";
         mapper->generateJSON(cgra, dfg, II, isStaticElasticCGRA);
-	cout << "[Output Json]\n";
+	      cout << "[Output Json]\n";
 
 	// save mapping results json file for possible incremental mapping
         if(!incrementalMapping) {
-	  mapper->generateJSON4IncrementalMap(cgra, dfg);
+	        mapper->generateJSON4IncrementalMap(cgra, dfg);
           cout << "[Output Json for Incremental Mapping]\n";
         }
       }
@@ -309,6 +404,44 @@ namespace {
       errs()<<"... done detected loops.size(): "<<targetLoops->size()<<"\n";
       return targetLoops;
     }
+
+    /*
+     * Early exit if mapping is not possible when no FU can support certain DFG op. Lists all the missing fus.
+     */
+     bool canMap(CGRA* t_cgra, DFG* t_dfg) {
+      std::set<std::string> missing_fus;
+
+      for (auto it = t_dfg->nodes.begin(); it != t_dfg->nodes.end(); ++it) {
+        DFGNode* node = *it;
+        bool nodeSupported = false;
+
+        for (int i = 0; i < t_cgra->getRows() && !nodeSupported; ++i) {
+          for (int j = 0; j < t_cgra->getColumns(); ++j) {
+            CGRANode* fu = t_cgra->nodes[i][j];
+            if (fu && fu->canSupport(node)) {
+              nodeSupported = true;
+              break;
+            }
+          }
+        }
+
+        if (!nodeSupported) {
+          missing_fus.insert(node->getOpcodeName());
+        }
+      }
+
+      if (!missing_fus.empty()) {
+        std::cout << "[canMap] Missing functional units: ";
+        for (const auto& op : missing_fus) {
+          std::cout << op << " ";
+        }
+        std::cout << std::endl;
+        return false;
+      }
+
+      return true;
+    }
+
   };
 }
 
@@ -335,6 +468,12 @@ void addDefaultKernels(map<string, list<int>*>* t_functionWithLoop) {
   (*t_functionWithLoop)["kernel_gemm"]->push_back(0);
   (*t_functionWithLoop)["kernel"] = new list<int>();
   (*t_functionWithLoop)["kernel"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kerneli"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kerneli"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPfPi"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPfPi"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPfS_"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPfS_"]->push_back(0);
   (*t_functionWithLoop)["_Z6kernelPfS_S_"] = new list<int>();
   (*t_functionWithLoop)["_Z6kernelPfS_S_"]->push_back(0);
   (*t_functionWithLoop)["_Z6kerneliPPiS_S_S_"] = new list<int>();
@@ -384,6 +523,23 @@ void addDefaultKernels(map<string, list<int>*>* t_functionWithLoop) {
   // nested
   // (*t_functionWithLoop)["_Z6kernelPfS_S_"] = new list<int>();
   // (*t_functionWithLoop)["_Z6kernelPfS_S_"]->push_back(0);
+
+  (*t_functionWithLoop)["_Z6kernelPiS_i"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPiS_i"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPfS_f"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPfS_f"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPiS_"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPiS_"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPfS_"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPfS_"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPfS_ff"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPfS_ff"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPiS_ii"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPiS_ii"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPfS_if"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPfS_if"]->push_back(0);
+  (*t_functionWithLoop)["_Z6kernelPiS_S_"] = new list<int>();
+  (*t_functionWithLoop)["_Z6kernelPiS_S_"]->push_back(0);
 }
 
 

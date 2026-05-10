@@ -12,6 +12,7 @@
 #define DFGNode_H
 
 #include <llvm/IR/Value.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/Support/raw_ostream.h>
@@ -23,6 +24,7 @@
 #include <iostream>
 
 #include "DFGEdge.h"
+#define MAXIMUM_COMBINED_TYPE 100
 
 using namespace llvm;
 using namespace std;
@@ -39,8 +41,8 @@ class DFGNode {
     Value* m_value;
     StringRef m_stringRef;
     string m_opcodeName;
-    // m_pathName is the derived from basic block of llvm
-    string m_pathName;  
+    // m_pathName is derived from basic block of llvm
+    string m_pathName;
     list<DFGEdge*> m_inEdges;
     list<DFGEdge*> m_outEdges;
     list<DFGNode*>* m_succNodes;
@@ -53,21 +55,30 @@ class DFGNode {
     string m_fuType;
     bool m_combined;
     bool m_merged;
+    // Used for specialized fusion (e.g. alu+mul and icmp+br can be regared as two kinds of complex nodes, so there are different tiles to support them)
+    string m_combinedtype;
     bool m_isPatternRoot;
     bool m_critical;
     int m_level;
     int m_execLatency;
     bool m_pipelinable;
     // "m_predicated" indicates whether the execution of the node depends on
-    // predication or not (i.e., the predecessor probably is a "branch"). 
+    // predication or not (i.e., the predecessor probably is a "branch").
     bool m_isPredicatee;
     list<DFGNode*>* m_predicatees;
     bool m_isPredicater;
     DFGNode* m_patternRoot;
     void setPatternRoot(DFGNode*);
 
+    int m_DVFSLatencyMultiple;
+    bool m_supportDVFS;
+
+    // "m_bbID" is used to specify which basicblock is this DFGNode in.
+    int m_bbID;
+
   public:
-    DFGNode(int, bool, Instruction*, StringRef, string);
+    DFGNode(int, bool, Instruction*, StringRef, bool);
+    DFGNode(int, DFGNode* old_node);
     int getID();
     void setID(int);
     void setLevel(int);
@@ -78,10 +89,14 @@ class DFGNode {
     bool isLoad();
     bool isStore();
     bool isReturn();
-    bool isCall();
+    string isCall();
     bool isBranch();
     bool isPhi();
-    bool isAdd();
+    bool isAddSub();
+    bool isScalarAddSub();
+    bool isConstantAddSub();
+    // Detect integer addition.
+    bool isIaddIsub();
     bool isMul();
     bool isCmp();
     bool isBitcast();
@@ -91,8 +106,11 @@ class DFGNode {
     bool isLogic();
     bool isOpt(string);
     bool isVectorized();
+    // Detect division.
+    bool isDiv();
+    string getComplexType();
     bool hasCombined();
-    void setCombine();
+    void setCombine(string type="");
     bool hasMerged();
     void setMerge();
     void addPatternPartner(DFGNode*);
@@ -102,6 +120,12 @@ class DFGNode {
     string getPathName();
     list<DFGNode*>* getPredNodes();
     list<DFGNode*>* getSuccNodes();
+    void deleteSuccNode(DFGNode*);
+    void deletePredNode(DFGNode*);
+    void deleteAllSuccNodes();
+    void deleteAllPredNodes();
+    void addSuccNode(DFGNode*);
+    void addPredNode(DFGNode*);
     bool isSuccessorOf(DFGNode*);
     bool isPredecessorOf(DFGNode*);
     bool isOneOfThem(list<DFGNode*>*);
@@ -129,11 +153,20 @@ class DFGNode {
     bool isPredicater();
     bool shareSameCycle(DFGNode*);
     void setExecLatency(int);
-    bool isMultiCycleExec();
-    int getExecLatency();
+    bool isMultiCycleExec(int);
+    int getExecLatency(int);
     void setPipelinable();
     bool isPipelinable();
     bool shareFU(DFGNode*);
+    void setDVFSLatencyMultiple(int);
+    int getDVFSLatencyMultiple();
+
+    // Sets m_bbID.
+    void setBBID(int);
+
+    // Reads m_bbID.
+    int getBBID();
+
 };
 
 #endif

@@ -20,6 +20,7 @@
 //#include <llvm/Support/FileSystem.h>
 #include <list>
 #include <string>
+#include <map>
 
 using namespace std;
 using namespace llvm;
@@ -54,7 +55,6 @@ class CGRANode {
     bool m_canReturn;
     bool m_canStore;
     bool m_canLoad;
-    bool m_canCall;
     bool m_canAdd;
     bool m_canMul;
     bool m_canShift;
@@ -64,12 +64,26 @@ class CGRANode {
     bool m_canMAC;
     bool m_canLogic;
     bool m_canBr;
+    bool m_canDiv;
     bool m_supportComplex;
     bool m_supportPathDim;
     bool m_supportVectorization;
     int** m_regs_duration;
     int** m_regs_timing;
     vector<list<pair<DFGNode*, int>>*> m_dfgNodesWithOccupyStatus;
+    vector<string> m_canCall;
+    vector<string> m_supportComplexType;
+
+    bool m_supportDVFS;
+    int m_DVFSIslandX;
+    int m_DVFSIslandY;
+    int m_DVFSIslandId;
+
+    int m_DVFSLatencyMultiple;
+    bool m_mapped;
+    bool m_synced;
+
+    bool m_canMultipleOps;
 
   public:
     CGRANode(int, int, int);
@@ -78,6 +92,12 @@ class CGRANode {
     void setCtrlMemConstraint(int);
     void setID(int);
     void setLocation(int, int);
+    void enableDVFS();
+    bool isDVFSEnabled();
+    void setDVFSIsland(int, int, int);
+    int getDVFSIslandID();
+    int getDVFSIslandX();
+    int getDVFSIslandY();
     int getID();
     bool enableFunctionality(string);
     void enableReturn();
@@ -96,6 +116,8 @@ class CGRANode {
     void enableMAC();
     void enableLogic();
     void enableBr();
+    void enableDiv();
+    void disableMultipleOps();
 
     void attachInLink(CGRALink*);
     void attachOutLink(CGRALink*);
@@ -136,6 +158,8 @@ class CGRANode {
     bool canMAC();
     bool canLogic();
     bool canBr();
+    bool canDiv();
+    bool canMultipleOps();
     DFGNode* getMappedDFGNode(int);
     bool containMappedDFGNode(DFGNode*, int);
     void allocateReg(CGRALink*, int, int, int);
@@ -144,6 +168,15 @@ class CGRANode {
     void disable();
     bool isDisabled();
     void disableAllFUs();
+    void setDVFSLatencyMultiple(int);
+    int getDVFSLatencyMultiple();
+    bool isFrequencyLowered();
+    bool isEndPipe(int, int);
+    bool isStartOrInPipe(int, int);
+    bool isInOrEndPipe(int, int);
+    bool isSynced();
+    void syncDVFS();
+    bool isMapped();
 };
 
 #endif

@@ -22,6 +22,7 @@
 #include <set>
 #include <map>
 #include <iostream>
+#include <algorithm>
 
 #include "DFGNode.h"
 #include "DFGEdge.h"
@@ -37,10 +38,15 @@ class DFG {
     bool m_precisionAware;
     list<DFGNode*>* m_orderedNodes;
     list<Loop*>* m_targetLoops;
+    list<BasicBlock*> m_targetBBs;
+    int m_vectorFactorForIdiv;
 
     //edges of data flow
     list<DFGEdge*> m_DFGEdges;
     list<DFGEdge*> m_ctrlEdges;
+
+    bool m_supportDVFS;
+    bool m_DVFSAwareMapping;
 
     string changeIns2Str(Instruction* ins);
     //get value's name or inst's content
@@ -52,6 +58,7 @@ class DFG {
     DFGEdge* getDFGEdge(DFGNode*, DFGNode*);
     void deleteDFGEdge(DFGNode*, DFGNode*);
     void replaceDFGEdge(DFGNode*, DFGNode*, DFGNode*, DFGNode*);
+    void replaceMultipleDFGEdge(DFGNode*, DFGNode*, DFGNode**, DFGNode**);
     bool hasDFGEdge(DFGNode*, DFGNode*);
     DFGEdge* getCtrlEdge(DFGNode*, DFGNode*);
     bool hasCtrlEdge(DFGNode*, DFGNode*);
@@ -60,19 +67,22 @@ class DFG {
     void tuneForBitcast();
     void tuneForLoad();
     void tuneForPattern();
-    void tuneForDualIssueAfter();
+    void tuneDivPattern();
     void tuneForMerge();
     void ESCORT();
-    void combineCmpBranch();
-    void combineMulAdd();
-    void combinePhiAdd();
-    void combine(string, string);
     void merge(list<DFGNode*>&, const int)
-    void combineForIter(list<string>*);
-    void combineForUnroll(list<string>*);
     void findExclusivePath(list<DFGNode*>*, const int);
     void pathMerge(list<DFGNode*>*, const int);
     void exclusiveMerge(const int, const int);
+    void combineAddCmpBranch();
+    void combineMulAdd(string type="");
+    // void combineAddMul(string type="");
+    void combineAddAdd(string type="");
+    void combinePhiAdd(string type="");
+    // void combine(string, string);
+    void combine(string, string, string type="");
+    void combineForIter(list<string>*, string type="");
+    void combineForUnroll(list<string>*);
     void trimForStandalone();
     void detectMemDataDependency();
     void eliminateOpcode(string);
@@ -92,9 +102,15 @@ class DFG {
     void initExecLatency(map<string, int>*);
     void initPipelinedOpt(list<string>*);
     bool isMinimumAndHasNotBeenVisited(set<DFGNode*>*, map<DFGNode*, int>*, DFGNode*);
+    // target nonlinear ops
+    void nonlinear_combine();
+    // target control flows
+    void ctrlFlow_combine(map<string, list<string>*>*);
+    void splitNodes();
 
   public:
-    DFG(Function&, list<Loop*>*, bool, bool, bool, map<string, int>*, list<string>*);
+    DFG(Function&, list<Loop*>*, bool, bool, list<string>*, map<string, int>*,
+        list<string>*, map<string, list<string>*>*, bool, bool, int t_vectorFactorForIdiv = 4, bool enableDistributed = false);
     list<list<DFGNode*>*>* m_cycleNodeLists;
     //initial ordering of insts
     list<DFGNode*> nodes;
@@ -102,14 +118,16 @@ class DFG {
     list<DFGNode*>* getBFSOrderedNodes();
     list<DFGNode*>* getDFSOrderedNodes();
     int getNodeCount();
+    int getMaxExecLatency();
     void construct(Function&);
     void setupCycles();
     list<list<DFGEdge*>*>* calculateCycles();
     list<list<DFGNode*>*>* getCycleLists();
     int getID(DFGNode*);
-    bool isLoad(DFGNode*);
-    bool isStore(DFGNode*);
     void showOpcodeDistribution();
     void generateDot(Function&, bool);
     void generateJSON();
+    void initDVFSLatencyMultiple(int, int, int);
+    void reorderInCriticalFirst();
+    bool isNodeOnCriticalPath(DFGNode*);
 };

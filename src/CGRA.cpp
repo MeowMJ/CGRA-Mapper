@@ -7,20 +7,44 @@
  * Author : Cheng Tan
  *   Date : Jan 9, 2023
  */
- 
+
 #include <fstream>
 #include "CGRA.h"
 #include "json.hpp"
 
 using json = nlohmann::json;
 
-CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
-	   bool t_heterogeneity, bool t_parameterizableCGRA, int t_pathSupportDim,
-	   map<string, list<int>*>* t_additionalFunc) {
+CGRA::CGRA(int t_rows, int t_columns, std::string t_vectorizationMode,
+	   list<string>* t_fusionStrategy, bool t_parameterizableCGRA,
+	   map<string, list<int>*>* t_additionalFunc,
+	   bool t_supportDVFS, int t_DVFSIslandDim, bool enableMultipleOps) {
   m_rows = t_rows;
   m_columns = t_columns;
   m_FUCount = t_rows * t_columns;
+  m_supportDVFS = t_supportDVFS;
+  m_DVFSIslandDim = t_DVFSIslandDim;
+  m_supportInclusive = enableMultipleOps;
+  m_supportComplex = new list<string>();
+  m_supportCall = new list<string>();
   nodes = new CGRANode**[t_rows];
+
+  // Initialize the m_supportComplex & m_supportCall list.
+  for (auto x: *t_additionalFunc) {
+    string func = x.first;
+    if (func.find("call") != string::npos) {
+      if (func.length() == 4) {
+        m_supportCall->push_back("");
+      } else {
+        m_supportCall->push_back(func.substr(func.find("call") + 5));
+      }
+    } else if (func.find("complex") != string::npos) {
+      if (func.length() == 7) {
+        m_supportComplex->push_back("");
+      } else {
+        m_supportComplex->push_back(func.substr(func.find("complex") + 8));
+      }
+    }
+  }
 
   if (t_parameterizableCGRA) {
 
@@ -30,6 +54,9 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
       nodes[i] = new CGRANode*[t_columns];
       for (int j=0; j<t_columns; ++j) {
         nodes[i][j] = new CGRANode(node_id, j, i);
+        if (!enableMultipleOps) {
+          nodes[i][j]->disableMultipleOps();
+        }
 	// nodes[i][j]->disableAllFUs();
 	id2Node[node_id] = nodes[i][j];
 	node_id += 1;
@@ -43,7 +70,7 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
     }
     json param;
     paramCGRA >> param;
-    
+
     int numOfNodes = t_rows * t_columns;
     for (int nodeID = 0; nodeID < numOfNodes; ++nodeID) {
       bool disabled = param["tiles"][to_string(nodeID)]["disabled"];
@@ -51,18 +78,60 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
         id2Node[nodeID]->disable();
       } else {
         bool supportAllFUs = param["tiles"][to_string(nodeID)]["supportAllFUs"];
-	if (!supportAllFUs) {
-	  id2Node[nodeID]->disableAllFUs();
-	}
+        if (supportAllFUs) {
+          // Enables all FUs.
+          id2Node[nodeID]->enableAdd();
+          id2Node[nodeID]->enableBr();
+          id2Node[nodeID]->enableCmp();
+          id2Node[nodeID]->enableLoad();
+          id2Node[nodeID]->enableLogic();
+          id2Node[nodeID]->enableMAC();
+          id2Node[nodeID]->enableMul();
+          id2Node[nodeID]->enablePhi();
+          id2Node[nodeID]->enableReturn();
+          id2Node[nodeID]->enableSel();
+          id2Node[nodeID]->enableShift();
+          id2Node[nodeID]->enableStore();
+        } else {
+          id2Node[nodeID]->disableAllFUs();
+          auto supportedFUs = param["tiles"][to_string(nodeID)]["supportedFUs"];
+          cout << "Node " << nodeID << " supports: ";
+          for (const auto& fu : supportedFUs) {
+            cout << fu << " ";
+            if (fu == "Add") {
+              id2Node[nodeID]->enableAdd();
+            } else if (fu == "Br") {
+              id2Node[nodeID]->enableBr();
+            } else if (fu == "Cmp") {
+              id2Node[nodeID]->enableCmp();
+            } else if (fu == "Ld") {
+              id2Node[nodeID]->enableLoad();
+            } else if (fu == "Logic") {
+              id2Node[nodeID]->enableLogic();
+            } else if (fu == "MAC") {
+              id2Node[nodeID]->enableMAC();
+            } else if (fu == "Mul") {
+              id2Node[nodeID]->enableMul();
+            } else if (fu == "Phi") {
+              id2Node[nodeID]->enablePhi();
+            } else if (fu == "Ret") {
+              id2Node[nodeID]->enableReturn();
+            } else if (fu == "Sel") {
+              id2Node[nodeID]->enableSel();
+            } else if (fu == "Shift") {
+              id2Node[nodeID]->enableShift();
+            } else if (fu == "St") {
+              id2Node[nodeID]->enableStore();
+            }
+          }
+          cout << " \n " << endl;
+        }
 	if (param["tiles"][to_string(nodeID)].contains("accessMem")) {
 	  if (param["tiles"][to_string(nodeID)]["accessMem"]) {
 	    id2Node[nodeID]->enableLoad();
 	    id2Node[nodeID]->enableStore();
 	  }
 	}
-
-	// TODO: need to take care of supportedFUs:
-	//
       }
     }
 
@@ -95,6 +164,9 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
       nodes[i] = new CGRANode*[t_columns];
       for (int j=0; j<t_columns; ++j) {
         nodes[i][j] = new CGRANode(node_id++, j, i);
+        if (!enableMultipleOps) {
+          nodes[i][j]->disableMultipleOps();
+        }
       }
     }
 
@@ -143,28 +215,30 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
 
     // Some other basic operations that can be indicated in the param.json:
     // Enable the specialized 'call' functionality.
-    for (int r=0; r<t_rows; ++r) {
-      for (int c=0; c<t_columns; ++c) {
-        nodes[r][c]->enableCall();
-      }
-    }
+    // for (int r=0; r<t_rows; ++r) {
+    //   for (int c=0; c<t_columns; ++c) {
+    //     nodes[r][c]->enableCall();
+    //   }
+    // }
 
     // Enable the vectorization.
-    if (t_diagonalVectorization) {
+    if (t_vectorizationMode == "interleaved") {
       for (int r=0; r<t_rows; ++r) {
         for (int c=0; c<t_columns; ++c) {
           if((r+c)%2 == 0)
             nodes[r][c]->enableVectorization();
         }
       }
-    } else {
+    } else if (t_vectorizationMode == "all") {
       for (int r=0; r<t_rows; ++r) {
         for (int c=0; c<t_columns; ++c) {
           nodes[r][c]->enableVectorization();
         }
       }
+    } else {
+      // "none" or else will be treated as none.
+      cout<<"No vectorization is enabled on the CGRA nodes."<<endl;
     }
-
 
     // Enable the heterogeneity.
     if (t_heterogeneity) {
@@ -223,6 +297,27 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
     disableSpecificConnections();
   }
 
+  if (t_supportDVFS) {
+    for (int r=0; r<t_rows; ++r) {
+      for (int c=0; c<t_columns; ++c) {
+        nodes[r][c]->enableDVFS();
+	int DVFSIslandX = c / t_DVFSIslandDim;
+	int DVFSIslandY = r / t_DVFSIslandDim;
+	int DVFSIslandId = DVFSIslandX + DVFSIslandY * t_columns / t_DVFSIslandDim;
+        nodes[r][c]->setDVFSIsland(DVFSIslandX, DVFSIslandY, DVFSIslandId);
+	// Islandize the CGRA nodes. In the prototype, each set of 2x2 nodes are
+        // grouped as one island. For example, a 4x4 CGRA has 2x2 islands, the
+        // tiles of (0, 2), (0, 3), (1, 2), (1, 3) are viewd as the (0, 1) island.
+	if (m_DVFSIslands.find(DVFSIslandId) != m_DVFSIslands.end()) {
+          m_DVFSIslands[DVFSIslandId].push_back(nodes[r][c]);
+	} else {
+          vector<CGRANode*> tiles{nodes[r][c]};
+          m_DVFSIslands[DVFSIslandId] = tiles;
+	}
+      }
+    }
+  }
+
 /*
   cout<<"[connection] horizontal and vertical."<<endl;
   // Connect the CGRA nodes with diagonal links.
@@ -256,6 +351,14 @@ CGRA::CGRA(int t_rows, int t_columns, bool t_diagonalVectorization,
   cout<<"[connection] diagonal."<<endl;
 */
 
+}
+
+list<string>* CGRA::getSupportComplex() {
+    return m_supportComplex;
+}
+
+list<string>* CGRA::getSupportCall() {
+    return m_supportCall;
 }
 
 void CGRA::disableSpecificConnections() {
@@ -331,4 +434,21 @@ CGRALink* CGRA::getLink(CGRANode* t_n1, CGRANode* t_n2) {
 
 int CGRA::getLinkCount() {
   return m_LinkCount;
+}
+
+map<int, vector<CGRANode*>> CGRA::getDVFSIslands() {
+  return m_DVFSIslands;
+}
+
+void CGRA::syncDVFSIsland(CGRANode* t_node) {
+  int islandID = t_node->getDVFSIslandID();
+  for (auto& nodeWithinIsland : m_DVFSIslands[islandID]) {
+    nodeWithinIsland->setDVFSLatencyMultiple(t_node->getDVFSLatencyMultiple());
+    nodeWithinIsland->syncDVFS();
+    cout << "[cheng] synced for node: " << nodeWithinIsland->getID() << "; check synced: " << nodeWithinIsland->isSynced() << "; addr: " << nodeWithinIsland << endl;
+  }
+}
+
+bool CGRA::getSupportInclusive() {
+  return m_supportInclusive;
 }

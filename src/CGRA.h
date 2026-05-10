@@ -22,10 +22,16 @@ class CGRA {
     int m_LinkCount;
     int m_rows;
     int m_columns;
+    bool m_supportDVFS;
+    bool m_supportInclusive;
+    int m_DVFSIslandDim;
+    map<int, vector<CGRANode*>> m_DVFSIslands;
+    list<string>* m_supportComplex;
+    list<string>* m_supportCall;
     void disableSpecificConnections();
 
   public:
-    CGRA(int, int, bool, bool, bool, int, map<string, list<int>*>*);
+    CGRA(int, int, std::string, list<string>*, bool, map<string, list<int>*>*, bool, int, bool=true);
     CGRANode ***nodes;
     CGRALink **links;
     int getFUCount();
@@ -38,4 +44,12 @@ class CGRA {
     void setBypassConstraint(int);
     void setCtrlMemConstraint(int);
     void setRegConstraint(int);
+    map<int, vector<CGRANode*>> getDVFSIslands();
+    // Aligns all the CGRA nodes within the same DVFS island to the
+    // same DVFS level based on the DVFS level of the given CGRA node.
+    void syncDVFSIsland(CGRANode*);
+    list<string>* getSupportComplex();
+    list<string>* getSupportCall();
+    bool getSupportInclusive();
 };
+
