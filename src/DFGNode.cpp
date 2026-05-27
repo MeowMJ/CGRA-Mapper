@@ -15,7 +15,7 @@ int testing_opcode_offset = 0;
 string initOpcodeNameHelper(Instruction* inst);
 
 DFGNode::DFGNode(int t_id, bool t_precisionAware, Instruction* t_inst,
-                 StringRef t_stringRef, bool t_supportDVFS) {
+                 StringRef t_stringRef, string t_basicBlockName, bool t_supportDVFS) {
   m_id = t_id;
   m_precisionAware = t_precisionAware;
   m_inst = t_inst;
@@ -432,10 +432,6 @@ string DFGNode::getOpcodeName() {
   } else {
     return result;
   }
-}
-
-string DFGNode::getPathName() {
-  return m_pathName;
 }
 
 string DFGNode::getPathName(){

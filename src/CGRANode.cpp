@@ -253,7 +253,7 @@ bool CGRANode::canSupport(DFGNode* t_opt) {
       (t_opt->isStore()      and !canStore()) or
       (t_opt->isReturn()     and !canReturn()) or
       (t_opt->isVectorized() and !supportVectorization()) or
-      (t_opt->hasCombined()  and !supportComplex()) or
+      (t_opt->hasCombined()  and !supportComplex("")) or
       (t_opt->hasMerged()    and !supportPathDim()) or
       (t_opt->isAddSub()     and !canAdd()) or  // We assume the HW adder can do both add and sub.
       (t_opt->isMul()        and !canMul()) or
@@ -570,11 +570,6 @@ bool CGRANode::enableFunctionality(string t_func) {
     enableLoad();
   } else if (t_func.compare("return") == 0) {
     enableReturn();
-  } else if (t_func.compare("call") == 0) {
-    enableCall();
-  } else if (t_func.compare("complex") == 0) {
-    enableComplex();
-  } else {
   } else if (t_func.find("call") != string::npos) {
     string type;
     const int kLengthOfCall = 4;

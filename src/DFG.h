@@ -47,6 +47,8 @@ class DFG {
 
     bool m_supportDVFS;
     bool m_DVFSAwareMapping;
+    bool m_enableResMIISplit;
+    int m_ctrlType;
 
     string changeIns2Str(Instruction* ins);
     //get value's name or inst's content
@@ -67,22 +69,23 @@ class DFG {
     void tuneForBitcast();
     void tuneForLoad();
     void tuneForPattern();
+    void mergeEdgesBetween(DFGNode*, DFGNode*);
     void tuneDivPattern();
     void tuneForMerge();
     void ESCORT();
-    void merge(list<DFGNode*>&, const int)
+    void merge(list<DFGNode*>&, const int);
     void findExclusivePath(list<DFGNode*>*, const int);
     void pathMerge(list<DFGNode*>*, const int);
     void exclusiveMerge(const int, const int);
     void combineAddCmpBranch();
+    void combinePhiAdd(string type="");
     void combineMulAdd(string type="");
     // void combineAddMul(string type="");
     void combineAddAdd(string type="");
-    void combinePhiAdd(string type="");
     // void combine(string, string);
     void combine(string, string, string type="");
     void combineForIter(list<string>*, string type="");
-    void combineForUnroll(list<string>*);
+    void combineForUnroll(string type, list<string>*);
     void trimForStandalone();
     void detectMemDataDependency();
     void eliminateOpcode(string);
@@ -110,7 +113,7 @@ class DFG {
 
   public:
     DFG(Function&, list<Loop*>*, bool, bool, list<string>*, map<string, int>*,
-        list<string>*, map<string, list<string>*>*, bool, bool, int t_vectorFactorForIdiv = 4, bool enableDistributed = false);
+        list<string>*, map<string, list<string>*>*, int, bool, bool, int t_vectorFactorForIdiv = 4, bool enableDistributed = false, bool t_enableResMIISplit = false);
     list<list<DFGNode*>*>* m_cycleNodeLists;
     //initial ordering of insts
     list<DFGNode*> nodes;

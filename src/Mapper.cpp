@@ -537,6 +537,45 @@ int Mapper::getMaxMappingCycle() {
   return m_maxMappingCycle;
 }
 
+float Mapper::getAvgOverallUtilization(CGRA* t_cgra, DFG* t_dfg, int t_II,
+    bool t_isStaticElasticCGRA, bool t_enablePowerGating) {
+  map<int, int> tile_overall_busy_cycles;
+  for (int i=0; i<t_cgra->getRows(); ++i) {
+    for (int j=0; j<t_cgra->getColumns(); ++j) {
+      auto tile = t_cgra->nodes[i][j];
+      for (int cycle = 0; cycle < t_II; ++cycle) {
+        bool is_tile_busy = false;
+        if (tile->isOccupied(cycle, t_II)) {
+          is_tile_busy = true;
+        } else {
+          for (auto inLink : *(tile->getInLinks())) {
+            if (inLink->isOccupied(cycle, t_II, t_isStaticElasticCGRA)) {
+              is_tile_busy = true;
+              break;
+            }
+          }
+        }
+        if (is_tile_busy) {
+          if (tile_overall_busy_cycles.find(tile->getID()) ==
+              tile_overall_busy_cycles.end()) {
+            tile_overall_busy_cycles[tile->getID()] = 0;
+          }
+          tile_overall_busy_cycles[tile->getID()] += 1;
+        }
+      }
+    }
+  }
+  float avg_util = 0.0f;
+  int total_active_tiles = 0;
+  for (int tile = 0; tile < t_cgra->getFUCount(); ++tile) {
+    if (t_enablePowerGating && tile_overall_busy_cycles[tile] == 0) continue;
+    total_active_tiles += 1;
+    avg_util += ((float)tile_overall_busy_cycles[tile]) / t_II;
+  }
+  if (total_active_tiles > 0) avg_util /= total_active_tiles;
+  return avg_util;
+}
+
 void Mapper::showUtilization(CGRA* t_cgra, DFG* t_dfg, int t_II,
 		             bool t_isStaticElasticCGRA,
 			     bool t_enablePowerGating) {
@@ -1736,15 +1775,9 @@ void Mapper::generateJSON4IncrementalMap(CGRA* t_cgra, DFG* t_dfg){
   for (DFGNode* dfgNode: t_dfg->nodes) {
     // Writes dfgnodeID, mapped CGRANode X and Y coordinates.i
     // opt id.
-<<<<<<< HEAD
     jsonFile<<"             \""<<dfgNode->getID()<<"\": {"<<endl;
     // opt mapped tile x coordinate.
     jsonFile<<"                     \"x\":"<<m_mapping[dfgNode]->getX()<<","<<endl;
-=======
-    jsonFile<<"             \""<<dfgNode->getID()<<"\": {"<<endl;
-    // opt mapped tile x coordinate.
-    jsonFile<<"                     \"x\":"<<m_mapping[dfgNode]->getX()<<","<<endl;
->>>>>>> f5eeba755245451367251c9a787615a8c681ef2d
     // opt mapped tile y coordinate.
     jsonFile<<"                     \"y\":"<<m_mapping[dfgNode]->getY()<<endl;
     idx += 1;

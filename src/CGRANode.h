@@ -103,8 +103,8 @@ class CGRANode {
     void enableReturn();
     void enableStore();
     void enableLoad();
-    void enableCall();
-    void enableComplex();
+    void enableCall(string);
+    void enableComplex(string);
     void enablePathDim();
     void enableVectorization();
     void enableAdd();
@@ -145,8 +145,8 @@ class CGRANode {
     bool canReturn();
     bool canStore();
     bool canLoad();
-    bool canCall();
-    bool supportComplex();
+    bool canCall(string);
+    bool supportComplex(string);
     bool supportPathDim();
     bool supportVectorization();
     bool canAdd();

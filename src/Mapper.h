@@ -48,6 +48,7 @@ class Mapper {
     bool schedule(CGRA*, DFG*, int, DFGNode*, map<CGRANode*, int>*, bool);
     void showSchedule(CGRA*, DFG*, int, bool, bool);
     void showUtilization(CGRA*, DFG*, int, bool, bool);
+    float getAvgOverallUtilization(CGRA*, DFG*, int, bool, bool);
     void generateJSON(CGRA*, DFG*, int, bool);
     void generateJSON4IncrementalMap(CGRA*, DFG*);
     int readRefMapRes(CGRA*, DFG*);

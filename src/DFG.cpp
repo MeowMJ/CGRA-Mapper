@@ -15,9 +15,10 @@
 DFG::DFG(Function& t_F, list<Loop*>* t_loops, bool t_targetFunction,
          bool t_precisionAware, list<string>* t_fusionStrategy,
          map<string, int>* t_execLatency, list<string>* t_pipelinedOpt,
-         map<string, list<string>*>* t_fusionPattern,
+         map<string, list<string>*>* t_fusionPattern, int t_ctrlType,
 	      bool t_supportDVFS, bool t_DVFSAwareMapping,
-	      int t_vectorFactorForIdiv, bool enableDistributed) {
+	      int t_vectorFactorForIdiv, bool enableDistributed,
+        bool t_enableResMIISplit) {
   m_num = 0;
   m_targetFunction = t_targetFunction;
   m_targetLoops = t_loops;
@@ -28,6 +29,8 @@ DFG::DFG(Function& t_F, list<Loop*>* t_loops, bool t_targetFunction,
   m_supportDVFS = t_supportDVFS;
   m_DVFSAwareMapping = t_DVFSAwareMapping;
   m_vectorFactorForIdiv = t_vectorFactorForIdiv;
+  m_enableResMIISplit = t_enableResMIISplit;
+  m_ctrlType = t_ctrlType;
 
   construct(t_F);
   bool needsCycleCalculation = false;
@@ -310,7 +313,7 @@ void DFG::ctrlFlow_combine(map<string, list<string>*>* t_fusionPattern) {
           combineForIter(iter->second, "Ctrl");
         }
   // combineForUnroll only resloves "phi-ConstantAdd-ConstantAdd-..."
-  combineForUnroll("Ctrl");
+  // combineForUnroll("Ctrl");
   combine("phi", "add", "Ctrl");
   combine("phi", "fadd", "Ctrl");
   combine("fcmp", "select", "Ctrl");
@@ -443,14 +446,30 @@ void DFG::tuneForMerge() {
   }
 }
 
-
+// TODO: add int t_ctrlType as prameter to specify different control flow fusion patterns (e.g., partial predication, full predication, etc.)
 void DFG::ESCORT() {
-  exclusiveMerge(2,100);
-  tuneForMerge();
+  if (m_ctrlType == 0) {
+    // ESCORT
+    cout << "ESCORT is on.\n";
+    ctrlFlow_combine(t_fusionPattern);
+    exclusiveMerge(2,100);
+    tuneForMerge();
+  }
+  else if (m_ctrlType == 1) {
+    // 4D-CGRA
+    cout << "4D-CGRA is on.\n";
+    exclusiveMerge(2,100);
+    tuneForMerge();
+  } else if (m_ctrlType == 2) {
+    // partial
+    cout << "partial predication is on.\n";
+  } else {
+    cout << "Error: Unknown control flow fusion type '" << m_ctrlType << "'\n";
+  }
   return;
 }
 
-void DFG::combineCmpBranch() {
+void DFG::combineAddCmpBranch() {
   // detect patterns (e.g., cmp+branch)
   DFGNode* addNode = NULL;
   DFGNode* cmpNode = NULL;
@@ -691,7 +710,7 @@ void DFG::combineForIter(list<string>* t_targetPattern, string type) {
 }
 
 // combineForUnroll is used to reconstruct "phi-add-add-..." alike patterns with a limited length.
-void DFG::combineForUnroll(list<string>* t_targetPattern){
+void DFG::combineForUnroll(string type,list<string>* t_targetPattern){
   int patternSize = t_targetPattern->size();
   if (patternSize > 4){
     cout<<"[ERROR] we currently only support pattern with length less than 5.\n";
@@ -718,7 +737,7 @@ void DFG::combineForUnroll(list<string>* t_targetPattern){
                 if(optNode != dfgNode){
                    dfgNode ->addPatternPartner(optNode);
                 }
-                optNode->setCombine();
+                optNode->setCombine(type);
               }
               break;
             } else{
@@ -784,10 +803,11 @@ void DFG::pathMerge(list<DFGNode*>* t_diffPathNode, const int t_mergeSize){
       queueNodes.push_back(headNode);
       visitedNodes.push_back(headNode);
       while(!queueNodes.empty()){
-        DFGNode* currentNode = queueNodes.pop_front();
+        DFGNode* currentNode = queueNodes.front();
+        queueNodes.pop_front();
         // add currentNode to current path
         pathNodes.push_back(currentNode);
-        for(DFGNode* succNode: currentNode->getSuccNodes()){
+        for(DFGNode* succNode: *(currentNode->getSuccNodes())){
           if(find(visitedNodes.begin(), visitedNodes.end(), succNode) != visitedNodes.end()){
             queueNodes.push_back(succNode);
             visitedNodes.push_back(succNode);
@@ -817,10 +837,11 @@ void DFG::pathMerge(list<DFGNode*>* t_diffPathNode, const int t_mergeSize){
           advance(it, min(i, path.size() - 1));
           nodesToMerge.push_back(*it);
       }
-      merge(&nodesToMerge, t_mergeSize);
+      merge(nodesToMerge, t_mergeSize);
       nodesToMerge.clear();
   }
 }
+
 
 void DFG::exclusiveMerge(const int t_mergeSize, const int t_mergeCount){
   // identify 'br' and 'switch' with multiple output paths, and merge those paths
@@ -978,7 +999,7 @@ list<DFGNode*>* DFG::getBFSOrderedNodes() {
       else {
         isTargetBB = true;
         DFGNode* dfgNode;
-        dfgNode = new DFGNode(nodeID++, m_precisionAware, curII, getValueName(curII), m_supportDVFS);
+        dfgNode = new DFGNode(nodeID++, m_precisionAware, curII, getValueName(curII), curBB->getName().str(), m_supportDVFS);
         dfgNode->setBBID(bbID);
         nodes.push_back(dfgNode);
         errs()<<"│   └── +++ \""<<*curII<<"\" (ID: "<<dfgNode->getID()<<")"<<"\n";
@@ -1942,7 +1963,7 @@ void DFG::tuneForBranch() {
       processedDFGBrNodes.push_back(left);
     } else {
       DFGNode* newDFGBrNode = new DFGNode(nodes.size(), m_precisionAware, left->getInst(),
-          getValueName(left->getInst()), m_supportDVFS);
+          getValueName(left->getInst()), left->getInst()->getParent()->getName().str(), m_supportDVFS);
       for (DFGNode* predDFGNode: *(left->getPredNodes())) {
         DFGEdge* newDFGBrEdge = new DFGEdge(newDFGEdgeID++,
             predDFGNode, newDFGBrNode);

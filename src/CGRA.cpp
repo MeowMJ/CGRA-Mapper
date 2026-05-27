@@ -16,7 +16,7 @@ using json = nlohmann::json;
 
 CGRA::CGRA(int t_rows, int t_columns, std::string t_vectorizationMode,
 	   list<string>* t_fusionStrategy, bool t_parameterizableCGRA,
-	   map<string, list<int>*>* t_additionalFunc,
+	   int t_pathSupportDim, map<string, list<int>*>* t_additionalFunc,
 	   bool t_supportDVFS, int t_DVFSIslandDim, bool enableMultipleOps) {
   m_rows = t_rows;
   m_columns = t_columns;
@@ -240,18 +240,18 @@ CGRA::CGRA(int t_rows, int t_columns, std::string t_vectorizationMode,
       cout<<"No vectorization is enabled on the CGRA nodes."<<endl;
     }
 
-    // Enable the heterogeneity.
-    if (t_heterogeneity) {
+    // TODO：Kepp t_heterogeneity.
+    // if (t_heterogeneity) {
       for (int r=0; r<t_rows; ++r) {
         for (int c=0; c<t_columns; ++c) {
-          if (((r*t_columns)+(c+1)) <= t_pathSupportDim){
-            std::cout<< "[MMJ] "<< t_pathSupportDim << "support fuse and merge." <<std::endl;
+          // if (((r*t_columns)+(c+1)) <= t_pathSupportDim){
+          //   std::cout<< "[MMJ] "<< t_pathSupportDim << "support fuse and merge." <<std::endl;
             nodes[r][c]->enableComplex();
             nodes[r][c]->enablePathDim();
-          }
+          // }
         }
       }
-    }
+    // }
 
     for (int r=0; r<t_rows; ++r) {
       for (int c=0; c<t_columns; ++c) {

@@ -62,6 +62,8 @@ namespace {
       std::string vectorizationMode = "all";
       bool heuristicMapping         = true;
       bool parameterizableCGRA      = false;
+      int pathSupportDim            = 0;
+      int ctrlType                  = 0;
 
       // Incremental mapping related:
       // https://github.com/tancheng/CGRA-Mapper/pull/24
@@ -120,7 +122,8 @@ namespace {
 	paramKeys.insert("fusionStrategy");
 	paramKeys.insert("heuristicMapping");
 	paramKeys.insert("parameterizableCGRA");
-        paramKeys.insert("incrementalMapping");
+  paramKeys.insert("incrementalMapping");
+  paramKeys.insert("pathSupportDim");
 
 	try
         {
@@ -158,7 +161,11 @@ namespace {
         vectorizationMode     = param["vectorizationMode"];
         heuristicMapping      = param["heuristicMapping"];
         parameterizableCGRA   = param["parameterizableCGRA"];
+        pathSupportDim        = param["pathSupportDim"];
 
+        if (param.find("ctrlType") != param.end()) {
+          ctrlType = param["ctrlType"];
+        }
         if (param.find("incrementalMapping") != param.end()) {
           incrementalMapping = param["incrementalMapping"];
         }
@@ -243,14 +250,15 @@ namespace {
       list<Loop*>* targetLoops = getTargetLoops(t_F, functionWithLoop, targetNested);
       // TODO: will make a list of patterns/tiles to illustrate how the
       //       heterogeneity is
+      //       if ctrlType != 0, the DFG will be renewed in mapAndEval()
       DFG* dfg = new DFG(t_F, targetLoops, targetEntireFunction, precisionAware,
-                         fusionStrategy, execLatency, pipelinedOpt, fusionPattern, supportDVFS,
+                         fusionStrategy, execLatency, pipelinedOpt, fusionPattern, ctrlType, supportDVFS,
 			 DVFSAwareMapping, vectorFactorForIdiv, enableDistributed);
       if (enableExpandableMapping) {
         dfg->reorderInCriticalFirst();
       }
       CGRA* cgra = new CGRA(rows, columns, vectorizationMode, fusionStrategy,
-		            parameterizableCGRA, additionalFunc, supportDVFS,
+		            parameterizableCGRA, pathSupportDim, additionalFunc, supportDVFS,
 			    DVFSIslandDim, enableMultipleOps);
       cgra->setRegConstraint(regConstraint);
       cgra->setCtrlMemConstraint(ctrlMemConstraint);
@@ -298,23 +306,60 @@ namespace {
       }
 
 
+
+
+      // =================================================================
+      // 根据 ResMII 范围重建 DFG（ctrlType == 0 时）
+      // - ResMII >= 4 : 用 ctrlType = 1 重建，然后走下方直接 map
+      // - ResMII == 1 : 用 ctrlType = 1 重建，然后走下方直接 map
+      // - 1 < ResMII < 4 : 不在此重建，留给 mapAndEval 处理双变体择优
+      // =================================================================
+      if (!ctrlType && ResMII >= 4) {
+        ctrlType = 1;  // 4D-CGRA
+        cout << "==================================\n";
+        cout << "[runOnFunction] ResMII >= 4, recreating DFG with ctrlType = 1\n";
+        DFG* newDfg = new DFG(t_F, targetLoops, targetEntireFunction, precisionAware,
+                              fusionStrategy, execLatency, pipelinedOpt, fusionPattern,
+                              ctrlType, supportDVFS, DVFSAwareMapping,
+                              vectorFactorForIdiv, enableDistributed);
+        if (enableExpandableMapping) {
+          newDfg->reorderInCriticalFirst();
+        }
+        delete dfg;
+        dfg = newDfg;
+      } else if (!ctrlType && ResMII == 1) {
+        ctrlType = 2;  // partial
+        cout << "==================================\n";
+        cout << "[runOnFunction] ResMII == 1, recreating DFG with ctrlType = 2\n";
+        DFG* newDfg = new DFG(t_F, targetLoops, targetEntireFunction, precisionAware,
+                              fusionStrategy, execLatency, pipelinedOpt, fusionPattern,
+                              ctrlType, supportDVFS, DVFSAwareMapping,
+                              vectorFactorForIdiv, enableDistributed);
+        if (enableExpandableMapping) {
+          newDfg->reorderInCriticalFirst();
+        }
+        delete dfg;
+        dfg = newDfg;
+      }
+
       // Heuristic algorithm (hill climbing) to get a valid mapping within
       // a acceptable II.
       bool success = false;
-      if (!isStaticElasticCGRA) {
+      DFG* selectedDfg = dfg;
+      if (!isStaticElasticCGRA and ctrlType) { // 直接 map 分支
         cout << "==================================\n";
         typedef std::chrono::high_resolution_clock Clock;
         auto t1 = Clock::now();
 
         if (heuristicMapping) {
-	  if(incrementalMapping){
-            II = mapper->incrementalMap(cgra, dfg, II);
-            cout << "[Incremental]\n";
-	  }
-	  else{
-            cout << "[heuristic]\n";
-            II = mapper->heuristicMap(cgra, dfg, II, isStaticElasticCGRA);
-          }
+            if(incrementalMapping){
+                    II = mapper->incrementalMap(cgra, dfg, II);
+                    cout << "[Incremental]\n";
+            }
+            else{
+                    cout << "[heuristic]\n";
+                    II = mapper->heuristicMap(cgra, dfg, II, isStaticElasticCGRA);
+                  }
         } else {
           cout << "[exhaustive]\n";
           II = mapper->exhaustiveMap(cgra, dfg, II, isStaticElasticCGRA);
@@ -323,11 +368,19 @@ namespace {
         auto t2 = Clock::now();
         int elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count() / 1000000;
         std::cout <<"Mapping algorithm elapsed time="<<elapsedTime <<"ms"<< '\n';
+      } else if (!isStaticElasticCGRA and !ctrlType) {
+        // 仅 ctrlType == 0 且 1 < ResMII < 4 会到达此处：创建两个 DFG 变体，分别映射后择优
+        II = mapAndEval(cgra, dfg, t_F, targetLoops, II,
+                        targetEntireFunction, precisionAware,
+                        fusionStrategy, execLatency, pipelinedOpt,
+                        fusionPattern, ctrlType, supportDVFS, DVFSAwareMapping,
+                        vectorFactorForIdiv, enableDistributed,
+                        enableExpandableMapping, heuristicMapping,
+                        isStaticElasticCGRA, enablePowerGating);
       }
 
       // Partially exhaustive search to try to map the DFG onto
       // the static elastic CGRA.
-
       if (isStaticElasticCGRA and !success) {
         cout << "==================================\n";
         cout << "[exhaustive]\n";
@@ -339,9 +392,6 @@ namespace {
         cout << "[fail]\n";
       else {
         mapper->showSchedule(cgra, dfg, II, isStaticElasticCGRA, parameterizableCGRA);
-        // cout << "==================================\n";
-        // cout << "[show opcode count]\n";
-        // dfg->showOpcodeDistribution();
         cout << "[Mapping Success]\n";
         cout << "==================================\n";
         if (enableExpandableMapping) {
@@ -442,6 +492,110 @@ namespace {
       return true;
     }
 
+
+    int mapAndEval(CGRA* t_cgra, DFG*& t_dfg, Function& t_F,
+                   list<Loop*>* t_targetLoops, int t_II,
+                   bool t_targetEntireFunction, bool t_precisionAware,
+                   list<string>* t_fusionStrategy,
+                   map<string, int>* t_execLatency,
+                   list<string>* t_pipelinedOpt,
+                   map<string, list<string>*>* t_fusionPattern,
+                   int t_ctrlType, bool t_supportDVFS, bool t_DVFSAwareMapping,
+                   int t_vectorFactorForIdiv, bool t_enableDistributed,
+                   bool t_enableExpandableMapping, bool t_heuristicMapping,
+                   bool t_isStaticElasticCGRA, bool t_enablePowerGating) {
+
+      // =====================================================================
+      // 仅处理 1 < ResMII < 4 的情况：创建两个 strategy 不同的 DFG 变体，分别映射后择优
+      // 分支 1 (ResMII >= 4) 和分支 2 (ResMII == 1) 已在 runOnFunction 中重建 DFG 并走直接 map 路径
+      // =====================================================================
+
+      cout << "==================================\n";
+      cout << "[mapAndEval] 1 < ResMII < 4, creating two DFG variants (A: strategy=false, B: strategy=true)\n";
+
+      // 变体 A (strategy=false)
+      DFG* dfgA = new DFG(t_F, t_targetLoops, t_targetEntireFunction, t_precisionAware,
+                          t_fusionStrategy, t_execLatency, t_pipelinedOpt, t_fusionPattern,
+                          t_ctrlType, t_supportDVFS,
+                          t_DVFSAwareMapping, t_vectorFactorForIdiv,
+                          t_enableDistributed);
+      if (t_enableExpandableMapping) {
+        dfgA->reorderInCriticalFirst();
+      }
+
+      // Create DFG variant B (strategy=true)
+      DFG* dfgB = new DFG(t_F, t_targetLoops, t_targetEntireFunction, t_precisionAware,
+                          t_fusionStrategy, t_execLatency, t_pipelinedOpt, t_fusionPattern,
+                          t_ctrlType, t_supportDVFS,
+                          t_DVFSAwareMapping, t_vectorFactorForIdiv,
+                          t_enableDistributed);
+      if (t_enableExpandableMapping) {
+        dfgB->reorderInCriticalFirst();
+      }
+
+
+      // Map variant A
+      cout << "==================================\n";
+      cout << "[Mapping DFG Variant A (strategy=false)]\n";
+      Mapper* mapperA = new Mapper(t_DVFSAwareMapping);
+      int II_A = t_II;
+      if (t_heuristicMapping) {
+        II_A = mapperA->heuristicMap(t_cgra, dfgA, II_A, t_isStaticElasticCGRA);
+      } else {
+        II_A = mapperA->exhaustiveMap(t_cgra, dfgA, II_A, t_isStaticElasticCGRA);
+      }
+      float utilA = (II_A != -1) ? mapperA->getAvgOverallUtilization(t_cgra, dfgA, II_A, t_isStaticElasticCGRA, t_enablePowerGating) : -1.0f;
+      cout << "[Variant A] II=" << II_A << ", avgUtil=" << utilA << "\n";
+
+      // Map variant B
+      cout << "==================================\n";
+      cout << "[Mapping DFG Variant B (strategy=true)]\n";
+      Mapper* mapperB = new Mapper(t_DVFSAwareMapping);
+      int II_B = t_II;
+      if (t_heuristicMapping) {
+        II_B = mapperB->heuristicMap(t_cgra, dfgB, II_B, t_isStaticElasticCGRA);
+      } else {
+        II_B = mapperB->exhaustiveMap(t_cgra, dfgB, II_B, t_isStaticElasticCGRA);
+      }
+      float utilB = (II_B != -1) ? mapperB->getAvgOverallUtilization(t_cgra, dfgB, II_B, t_isStaticElasticCGRA, t_enablePowerGating) : -1.0f;
+      cout << "[Variant B] II=" << II_B << ", avgUtil=" << utilB << "\n";
+
+      // Select the better variant: lower II wins; if equal, higher utilization wins.
+      bool selectA = false;
+      int resultII = -1;
+      if (II_A == -1 && II_B == -1) {
+        cout << "[mapAndEval] Both variants failed to map.\n";
+        resultII = -1;
+      } else if (II_A == -1) {
+        selectA = false;
+      } else if (II_B == -1) {
+        selectA = true;
+      } else if (II_A < II_B) {
+        selectA = true;
+      } else if (II_B < II_A) {
+        selectA = false;
+      } else {
+        selectA = (utilA >= utilB);
+      }
+
+      if (resultII == -1 && (II_A != -1 || II_B != -1)) {
+        if (selectA) {
+          cout << "[mapAndEval] Selected Variant A (strategy=false): II=" << II_A << ", avgUtil=" << utilA << "\n";
+          resultII = II_A;
+          if (t_dfg != dfgA) { delete t_dfg; t_dfg = dfgA; }
+          delete mapper; mapper = mapperA;
+          delete mapperB; delete dfgB;
+        } else {
+          cout << "[mapAndEval] Selected Variant B (strategy=true): II=" << II_B << ", avgUtil=" << utilB << "\n";
+          resultII = II_B;
+          if (t_dfg != dfgB) { delete t_dfg; t_dfg = dfgB; }
+          delete mapper; mapper = mapperB;
+          delete mapperA; delete dfgA;
+        }
+      }
+
+      return resultII;
+    }
   };
 }
 

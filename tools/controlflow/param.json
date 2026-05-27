@@ -1,0 +1,53 @@
+{
+    "kernel": "_Z16fft_short_kernelPA128_fiPPs",
+    "targetFunction": false,
+    "targetNested": false,
+    "targetLoopsID": [
+        0
+    ],
+    "doCGRAMapping": true,
+    "row": 4,
+    "column": 4,
+    "precisionAware": false,
+    "fusionStrategy": [],
+    "isTrimmedDemo": true,
+    "heuristicMapping": true,
+    "parameterizableCGRA": false,
+    "vectorizationMode": "all",
+    "diagonalVectorization": false,
+    "bypassConstraint": 4,
+    "isStaticElasticCGRA": false,
+    "ctrlMemConstraint": 10,
+    "regConstraint": 8,
+    "incrementalMapping": false,
+    "vectorFactorForIdiv ": 1,
+    "fusionPattern": {
+        "4": [
+            "phi",
+            "add",
+            "icmp",
+            "br"
+        ]
+    },
+    "additionalFunc": {
+        "load": [
+            0,
+            1,
+            2,
+            3
+        ],
+        "store": [
+            0,
+            1,
+            2,
+            3
+        ]
+    },
+    "pathSupportDim": 4,
+    "ctrlType": 2,
+    "supportDVFS": false,
+    "DVFSIslandDim": 1,
+    "DVFSAwareMapping": false,
+    "enablePowerGating": false,
+    "expandableMapping": true
+}

@@ -77,7 +77,7 @@ class DFGNode {
     int m_bbID;
 
   public:
-    DFGNode(int, bool, Instruction*, StringRef, bool);
+    DFGNode(int, bool, Instruction*, StringRef, string, bool);
     DFGNode(int, DFGNode* old_node);
     int getID();
     void setID(int);

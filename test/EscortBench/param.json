@@ -1,0 +1,34 @@
+{
+  "kernel"                : "_Z13adpcm_decoderPhPcii",
+  "targetFunction"        : false,
+  "targetNested"          : false,
+  "targetLoopsID"         : [0],
+  "doCGRAMapping"         : true,
+  "row"                   : 4,
+  "column"                : 4,
+  "precisionAware"        : false,
+  "fusionStrategy"        : ["default_heterogeneous"],
+  "isTrimmedDemo"         : true,
+  "heuristicMapping"      : true,
+  "parameterizableCGRA"   : false,
+  "vectorizationMode"     : "all",
+  "bypassConstraint"      : 4,
+  "isStaticElasticCGRA"   : false,
+  "ctrlMemConstraint"     : 10,
+  "regConstraint"         : 8,
+  "ctrlType"              : 0,
+  "supportDVFS"           : false,
+  "opcodeOffset"          : 0,
+  "DVFSIslandDim"         : 1,
+  "DVFSAwareMapping"      : false,
+  "enablePowerGating"     : false,
+  "fusionPattern"         : {
+                              "4" : ["phi", "add", "icmp", "br"]
+                            },
+  "additionalFunc"        : {
+                              "load" : [0,1,2,3],
+                              "store": [0,1,2,3]
+                            },
+  "incrementalMapping"   : false,
+  "pathSupportDim"       : 4
+}
